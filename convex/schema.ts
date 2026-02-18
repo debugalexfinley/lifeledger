@@ -3,6 +3,7 @@ import { v } from "convex/values";
 
 export default defineSchema({
   games: defineTable({
+    // ── Identity ─────────────────────────────────────────
     displayName: v.string(),
     startingPoint: v.union(
       v.literal("high_school"),
@@ -20,13 +21,14 @@ export default defineSchema({
       v.literal("conservative")
     ),
     cityTier: v.union(v.literal("low"), v.literal("medium"), v.literal("high")),
+    gender: v.union(v.literal("male"), v.literal("female"), v.literal("nonbinary")),
 
-    // Progress
+    // ── Progress ──────────────────────────────────────────
     currentAge: v.number(),
     currentMonth: v.number(),
     gameStatus: v.union(v.literal("active"), v.literal("complete")),
 
-    // Finances
+    // ── Finances ──────────────────────────────────────────
     cash: v.number(),
     monthlyIncome: v.number(),
     monthlyExpenses: v.number(),
@@ -40,7 +42,7 @@ export default defineSchema({
     retirementAccount: v.number(),
     lifetimeIncome: v.number(),
 
-    // Character
+    // ── Character ─────────────────────────────────────────
     happiness: v.number(),
     health: v.number(),
     careerLevel: v.union(
@@ -77,9 +79,63 @@ export default defineSchema({
     jobTitle: v.string(),
     industry: v.string(),
 
-    // Business System
-    entrepreneurshipSkill: v.number(), // 0-100
-    marketingSkill: v.number(), // 0-100
+    // ── Biological attributes (rolled at game start) ──────
+    iq: v.number(),               // 60–160, mean 100 stddev 15
+    athleticGenetics: v.number(), // 10–95, mean 50 stddev 15
+    heightInches: v.number(),     // 58–80, player-overridable
+
+    // ── Health habits (persistent monthly settings) ───────
+    exerciseHabit: v.union(
+      v.literal("sedentary"),
+      v.literal("3x_week"),
+      v.literal("gym")
+    ),
+    dietHabit: v.union(
+      v.literal("healthy"),
+      v.literal("average"),
+      v.literal("fast_food")
+    ),
+    sleepHabit: v.union(
+      v.literal("8hrs"),
+      v.literal("6hrs"),
+      v.literal("grind_5hrs")
+    ),
+    stressManagement: v.union(
+      v.literal("therapy"),
+      v.literal("meditation"),
+      v.literal("nothing")
+    ),
+    preventiveCare: v.boolean(),
+
+    // ── Life expectancy & mortality ───────────────────────
+    projectedLifeExpectancy: v.number(),
+    isDeceased: v.boolean(),
+    ageAtDeath: v.optional(v.number()),
+    exerciseStreakMonths: v.number(),
+    poorDietNoExerciseMonths: v.number(),
+    smokingHistory: v.boolean(),
+
+    // ── Social skills ─────────────────────────────────────
+    communicationSkill: v.number(),  // 0–100, starts 20
+    fearOfRejection: v.number(),     // 0–100, starts 60 (high = scared)
+
+    // ── Skill stack ───────────────────────────────────────
+    publicSpeaking: v.number(),
+    sales: v.number(),
+    technicalSkill: v.number(),
+    financialLiteracy: v.number(),
+    leadership: v.number(),
+    writing: v.number(),
+    negotiation: v.number(),
+    networking: v.number(),
+    creativity: v.number(),
+    emotionalIntelligence: v.number(),
+    activeSkillStack: v.optional(v.string()),
+    skillStackMultiplier: v.number(),
+
+    // ── Business system ───────────────────────────────────
+    entrepreneurshipSkill: v.number(),
+    marketingSkill: v.number(),
     activeBusiness: v.optional(v.object({
       businessTypeId: v.string(),
       businessTypeName: v.string(),
@@ -105,77 +161,118 @@ export default defineSchema({
       outcome: v.string(),
     })),
 
-    // Recession state
+    // ── Dating / relationship system ──────────────────────
+    onlineDatingActive: v.boolean(),
+    currentPartner: v.optional(v.object({
+      name: v.string(),
+      traits: v.array(v.string()),
+      career: v.string(),
+      monthlyIncome: v.number(),
+      attractiveness: v.number(),
+      iq: v.number(),
+      ambition: v.number(),
+      emotionalStability: v.number(),
+      financialResponsibility: v.number(),
+      compatibilityScore: v.number(),
+      monthsTogether: v.number(),
+      compatibilityRevealed: v.boolean(),
+      status: v.union(v.literal("dating"), v.literal("married")),
+    })),
+    pendingDateOffer: v.optional(v.object({
+      name: v.string(),
+      traits: v.array(v.string()),
+      career: v.string(),
+      monthlyIncome: v.number(),
+      attractiveness: v.number(),
+      iq: v.number(),
+      ambition: v.number(),
+      emotionalStability: v.number(),
+      financialResponsibility: v.number(),
+      compatibilityScore: v.number(),
+      location: v.string(),
+      source: v.union(v.literal("organic"), v.literal("online")),
+      hasBeenTalkedTo: v.boolean(),
+    })),
+    pendingMatches: v.optional(v.array(v.object({
+      name: v.string(),
+      traits: v.array(v.string()),
+      career: v.string(),
+      monthlyIncome: v.number(),
+      attractiveness: v.number(),
+      iq: v.number(),
+      ambition: v.number(),
+      emotionalStability: v.number(),
+      financialResponsibility: v.number(),
+      compatibilityScore: v.number(),
+      location: v.string(),
+      source: v.union(v.literal("organic"), v.literal("online")),
+      hasBeenTalkedTo: v.boolean(),
+    }))),
+    datingHistory: v.optional(v.array(v.object({
+      name: v.string(),
+      monthsTogether: v.number(),
+      outcome: v.string(),
+    }))),
+
+    // ── Recession state ───────────────────────────────────
     recessionActive: v.boolean(),
     recessionMonthsRemaining: v.number(),
 
-    // Logs
-    eventLog: v.array(
-      v.object({
-        month: v.number(),
-        age: v.number(),
-        title: v.string(),
-        body: v.string(),
-        impact: v.string(),
-      })
-    ),
-    decisionsLog: v.array(
-      v.object({
-        month: v.number(),
-        age: v.number(),
-        decision: v.string(),
-        outcome: v.string(),
-      })
-    ),
-    happinessHistory: v.array(
-      v.object({
-        age: v.number(),
-        month: v.number(),
-        value: v.number(),
-      })
-    ),
-    healthHistory: v.array(
-      v.object({
-        age: v.number(),
-        month: v.number(),
-        value: v.number(),
-      })
-    ),
+    // ── Logs ──────────────────────────────────────────────
+    eventLog: v.array(v.object({
+      month: v.number(),
+      age: v.number(),
+      title: v.string(),
+      body: v.string(),
+      impact: v.string(),
+    })),
+    decisionsLog: v.array(v.object({
+      month: v.number(),
+      age: v.number(),
+      decision: v.string(),
+      outcome: v.string(),
+    })),
+    happinessHistory: v.array(v.object({
+      age: v.number(),
+      month: v.number(),
+      value: v.number(),
+    })),
+    healthHistory: v.array(v.object({
+      age: v.number(),
+      month: v.number(),
+      value: v.number(),
+    })),
 
-    // Active effects
-    activeEffects: v.array(
-      v.object({
-        type: v.string(),
-        value: v.number(),
-        monthsRemaining: v.number(),
-      })
-    ),
+    // ── Active effects ────────────────────────────────────
+    activeEffects: v.array(v.object({
+      type: v.string(),
+      value: v.number(),
+      monthsRemaining: v.number(),
+    })),
 
-    // Spending modifier
+    // ── Spending modifier ─────────────────────────────────
     spendingMultiplier: v.number(),
 
-    // Pending event
+    // ── Pending event ─────────────────────────────────────
     pendingEventId: v.optional(v.string()),
-    pendingEventData: v.optional(
-      v.object({
-        templateId: v.string(),
-        title: v.string(),
-        body: v.string(),
-        impactType: v.string(),
-        hasChoice: v.boolean(),
-        choiceAcceptOutcome: v.string(),
-        choiceDeclineOutcome: v.string(),
-      })
-    ),
+    pendingEventData: v.optional(v.object({
+      templateId: v.string(),
+      title: v.string(),
+      body: v.string(),
+      impactType: v.string(),
+      hasChoice: v.boolean(),
+      choiceAcceptOutcome: v.string(),
+      choiceDeclineOutcome: v.string(),
+    })),
 
-    // Milestone flags
+    // ── Milestone flags ───────────────────────────────────
     milestone30Done: v.boolean(),
     milestone50Done: v.boolean(),
     milestoneNarrative30: v.optional(v.string()),
     milestoneNarrative50: v.optional(v.string()),
     milestoneNarrative75: v.optional(v.string()),
 
-    // End game
+    // ── End game ──────────────────────────────────────────
     finalScore: v.optional(v.number()),
     finalGrade: v.optional(v.string()),
     createdAt: v.number(),
@@ -228,28 +325,31 @@ export default defineSchema({
   businessTypes: defineTable({
     name: v.string(),
     category: v.string(),
-    description: v.string(),
+    scaleRating: v.number(),
+    overhead: v.string(),
+    marketingDependency: v.number(),
     startupCostMin: v.number(),
     startupCostMax: v.number(),
-    baseSuccessRate: v.number(), // 0-100
-    revenueRangeMin: v.number(),
-    revenueRangeMax: v.number(),
-    degreeBonus: v.optional(v.object({
-      degree: v.string(),
-      skillBonus: v.number(),
-      marketingBonus: v.optional(v.number()),
-    })),
-    requiredSkillMin: v.number(), // minimum entrepreneurship skill to start
+    description: v.string(),
+    degreeBonuses: v.any(),
   }),
 
   careers: defineTable({
     title: v.string(),
     requiredDegree: v.string(),
+    startingSalary: v.number(),
+    median10yrSalary: v.number(),
+    top10pctSalary: v.number(),
+    progressionPath: v.array(v.string()),
+    jobSecurityRating: v.number(),
     industry: v.string(),
-    startingSalaryMonthly: v.number(),
-    medianSalaryMonthly: v.number(),
-    topSalaryMonthly: v.number(),
-    jobSecurityRating: v.number(), // 1-10
-    progressionPaths: v.array(v.string()),
+  }),
+
+  colleges: defineTable({
+    name: v.string(),
+    state: v.string(),
+    type: v.string(),
+    avgAnnualCost: v.number(),
+    acceptanceRate: v.number(),
   }),
 });
