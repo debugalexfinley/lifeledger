@@ -3,6 +3,12 @@ import { v } from "convex/values";
 import { api } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { DECISION_TEMPLATES } from "./businessDecisions";
+import {
+  updateBusinessStageSync, runCustomerSimulationSync, applyLeversToMetricsSync,
+  runCompetitorSimulationSync, calcKPIsSync, generateFinancialReport,
+  runEcomEngineSync, runServiceEngineSync, determineEngine,
+  applyMarketPositioningSync, wagesPremiumCandidateEffect,
+} from "./businessSimulator";
 
 // ═══════════════════════════════════════════════════
 // HELPERS
@@ -543,6 +549,113 @@ export const endMonth = mutation({
     const remainingRipples = (game.pendingBusinessRipples ?? []).filter(r => !dueRipples.includes(r));
     bizPatch.pendingBusinessRipples = remainingRipples;
 
+    // ── 20b. Business stage label update ─────────────────────
+    if (game.activeBusiness && game.activeBusiness.stage !== "failed") {
+      const stagePatch = updateBusinessStageSync({ ...game, ...bizPatch });
+      Object.assign(bizPatch, stagePatch);
+    }
+
+    const simStage = (bizPatch.businessStageLabel ?? game.businessStageLabel) as string | undefined;
+    const isGrowthOrScale = simStage === "growth" || simStage === "scale";
+
+    // ── 20c. Engine-specific revenue simulation ───────────────
+    if (game.activeBusiness && game.activeBusiness.stage !== "failed" && isGrowthOrScale) {
+      const engine = game.activeBusiness.businessEngine ?? "service";
+      const merged = { ...game, ...bizPatch };
+
+      if (engine === "ecom") {
+        const ecomResult = runEcomEngineSync(merged) as any;
+        if (ecomResult.revenueDelta) {
+          // Update the activeBusiness revenue with ecom calculation
+          const existingBiz = bizPatch.activeBusiness ?? game.activeBusiness;
+          bizPatch.activeBusiness = { ...existingBiz, monthlyRevenue: ecomResult.revenueDelta };
+          monthlyExpenses = Math.max(0, monthlyExpenses + (ecomResult.expenseDelta ?? 0));
+        }
+      } else {
+        // SaaS or service: customer funnel simulation
+        const simResult = runCustomerSimulationSync(merged) as any;
+        if (simResult.businessMetrics) {
+          bizPatch.businessMetrics = simResult.businessMetrics;
+          if (simResult._mrrDelta) monthlyIncome = Math.max(0, monthlyIncome + simResult._mrrDelta);
+        }
+        if (engine === "service") {
+          const svcResult = runServiceEngineSync(merged) as any;
+          if (svcResult.revenueDelta) {
+            const existingBiz = bizPatch.activeBusiness ?? game.activeBusiness;
+            bizPatch.activeBusiness = { ...existingBiz, monthlyRevenue: svcResult.revenueDelta };
+            if (svcResult.expenseDelta) monthlyExpenses = Math.max(0, monthlyExpenses + svcResult.expenseDelta);
+          }
+        }
+      }
+    }
+
+    // ── 20d. Apply business levers + market positioning (full mode only) ────
+    const bizMode = game.businessMode ?? "simplified";
+    if (game.activeBusiness && bizMode === "full") {
+      // Levers
+      if (game.businessLevers) {
+        const leverMerge = { ...game, businessMetrics: bizPatch.businessMetrics ?? game.businessMetrics };
+        const leverResult = applyLeversToMetricsSync(leverMerge) as any;
+        if (leverResult.businessMetrics) bizPatch.businessMetrics = leverResult.businessMetrics;
+        if (leverResult.expenseDelta)    monthlyExpenses = Math.max(0, monthlyExpenses + leverResult.expenseDelta);
+      }
+
+      // Market positioning — premium pricing, quality multiplier, wages
+      if (game.marketPositioning) {
+        const mpMerge = {
+          ...game,
+          activeBusiness: bizPatch.activeBusiness ?? game.activeBusiness,
+          businessMetrics: bizPatch.businessMetrics ?? game.businessMetrics,
+        };
+        const mpResult = applyMarketPositioningSync(mpMerge);
+        if (mpResult.revenueDelta !== 0) {
+          // Apply revenue delta to the activeBusiness revenue AND to income
+          const currentBiz = bizPatch.activeBusiness ?? game.activeBusiness;
+          bizPatch.activeBusiness = {
+            ...currentBiz,
+            monthlyRevenue: Math.max(0, currentBiz.monthlyRevenue + mpResult.revenueDelta),
+          };
+          // Revenue delta also flows into effective income
+          effectiveIncome = Math.max(0, effectiveIncome + mpResult.revenueDelta);
+        }
+        if (mpResult.expenseDelta !== 0) {
+          monthlyExpenses = Math.max(0, monthlyExpenses + mpResult.expenseDelta);
+        }
+        if (mpResult.metricsPatch) {
+          bizPatch.businessMetrics = mpResult.metricsPatch;
+        }
+      }
+    }
+
+    // ── 20e. AI competitor simulation ────────────────────────
+    if (game.activeBusiness && isGrowthOrScale) {
+      const compMerge = { ...game, businessMetrics: bizPatch.businessMetrics ?? game.businessMetrics, businessStageLabel: simStage };
+      const compResult = runCompetitorSimulationSync(compMerge);
+      if (compResult.competitors)       bizPatch.competitors       = compResult.competitors;
+      if (compResult.competitorIntelLog) bizPatch.competitorIntelLog = compResult.competitorIntelLog;
+    }
+
+    // ── 20f. KPI scorecard + credit rating ───────────────────
+    if (game.activeBusiness && isGrowthOrScale) {
+      const kpiMerge = { ...game, businessMetrics: bizPatch.businessMetrics ?? game.businessMetrics, competitors: bizPatch.competitors ?? game.competitors };
+      const kpiResult = calcKPIsSync(kpiMerge, bizPatch);
+      bizPatch.boardConfidence = kpiResult.boardConfidence;
+      bizPatch.creditRating    = kpiResult.creditRating as any;
+    }
+
+    // ── 20g. Financial report snapshot (full mode only) ───────
+    if (game.activeBusiness && isGrowthOrScale && bizMode === "full") {
+      const reportMerge = { ...game, ...bizPatch };
+      const report = generateFinancialReport(reportMerge, bizPatch);
+      if (report) {
+        bizPatch.financialHistory = [...(game.financialHistory ?? []), report].slice(-24); // keep 24 months
+      }
+    }
+
+    // ── 20h. Store prevMonthMRR for next month growth calc ────
+    const finalMetrics = bizPatch.businessMetrics ?? game.businessMetrics;
+    if (finalMetrics) bizPatch.prevMonthMRR = finalMetrics.mrr;
+
     // ── 21. Generate fresh business decisions for next month ──
     if (game.activeBusiness && game.activeBusiness.stage !== 'failed') {
       const shuffled = [...DECISION_TEMPLATES].sort(() => Math.random() - 0.5);
@@ -556,15 +669,24 @@ export const endMonth = mutation({
       const roles = ['VA', 'Marketer', 'Developer', 'Sales Rep', 'Operations'];
       const names = ['Alex', 'Jordan', 'Morgan', 'Casey', 'Riley', 'Sam', 'Drew', 'Quinn'];
       const salaryMap: Record<string, number> = { VA: 800, Marketer: 3500, Developer: 6000, 'Sales Rep': 2500, Operations: 3000 };
-      const candidates = Array.from({ length: 3 }, () => {
+
+      // Wages premium affects candidate pool quality and count
+      const wagesFx  = wagesPremiumCandidateEffect(game.marketPositioning?.wagesPremium ?? 0);
+      const poolSize = Math.max(1, Math.round(3 * wagesFx.poolMultiplier));
+      const candidates = Array.from({ length: poolSize }, () => {
         const role  = roles[Math.floor(Math.random() * roles.length)];
         const skill = Math.round(Math.random() * 6) + 3;
+        const rawReliability = Math.round(Math.random() * 6) + 3;
+        // Clamp wages-adjusted reliability to 1–9
+        const reliability = Math.max(1, Math.min(9, rawReliability + Math.round(wagesFx.reliabilityBonus / 3)));
+        const salaryBase = (salaryMap[role] ?? 2000);
+        const wageAdj    = game.marketPositioning ? Math.round(salaryBase * (game.marketPositioning.wagesPremium / 100)) : 0;
         return {
           name:          names[Math.floor(Math.random() * names.length)],
           role,
           skillLevel:    skill,
-          reliability:   Math.round(Math.random() * 6) + 3,
-          monthlySalary: (salaryMap[role] ?? 2000) + (skill - 5) * 300,
+          reliability,
+          monthlySalary: salaryBase + (skill - 5) * 300 + wageAdj,
         };
       });
       bizPatch.pendingBusinessDecisions = newDecisions;
@@ -623,6 +745,9 @@ export const endMonth = mutation({
       isGameOver: gameStatus === "complete",
       newlyUnlockedStack,
       organicMeeting: pendingMatches && pendingMatches.length > 0,
+      stageJustUnlocked: bizPatch.businessStageLabel && bizPatch.businessStageLabel !== game.businessStageLabel
+        ? bizPatch.businessStageLabel as string : undefined,
+      boardReportReady: !!(bizPatch.boardConfidence !== undefined),
     };
   },
 });
@@ -970,6 +1095,7 @@ export const startBusiness = mutation({
         monthlyExpenses:  Math.round(args.initialInvestment * 0.3),
         totalInvested:    args.initialInvestment,
         marketingActionsThisMonth: 0,
+        businessEngine:   determineEngine(args.businessTypeName),
       },
     });
     return { status: "ok", message: `${args.businessTypeName} launched! Ent. skill +${3 + bonusSkill}` };

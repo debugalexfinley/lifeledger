@@ -200,6 +200,11 @@ export default defineSchema({
       monthlyExpenses: v.number(),
       totalInvested: v.number(),
       marketingActionsThisMonth: v.number(),
+      businessEngine: v.optional(v.union(
+        v.literal("ecom"),
+        v.literal("service"),
+        v.literal("saas")
+      )),
     })),
     businessHistory: v.array(v.object({
       businessTypeName: v.string(),
@@ -207,6 +212,176 @@ export default defineSchema({
       monthsActive: v.number(),
       peakRevenue: v.number(),
       outcome: v.string(),
+    })),
+
+    // ── Business simulator expansion ─────────────────────
+    businessStageLabel: v.optional(v.union(
+      v.literal("startup"),
+      v.literal("growth"),
+      v.literal("scale")
+    )),
+    businessMetrics: v.optional(v.object({
+      mrr: v.number(),
+      customerCount: v.number(),
+      churnRate: v.number(),
+      cac: v.number(),
+      ltv: v.number(),
+      grossMarginPct: v.number(),
+      brandReputation: v.number(),
+      leadsPerMonth: v.number(),
+      conversionRate: v.number(),
+    })),
+    productRoadmap: v.optional(v.array(v.object({
+      id: v.string(),
+      title: v.string(),
+      description: v.string(),
+      category: v.union(v.literal("feature"), v.literal("product"), v.literal("improvement")),
+      timeInvestmentRequired: v.number(),
+      moneyInvestmentRequired: v.number(),
+      timeInvested: v.number(),
+      moneyInvested: v.number(),
+      progressPct: v.number(),
+      expectedImpact: v.string(),
+      rippleEffect: v.string(),
+      rippleValue: v.number(),
+      completedAt: v.optional(v.number()),
+    }))),
+    activeCompetitorEvent: v.optional(v.object({
+      type: v.string(),
+      description: v.string(),
+      monthsRemaining: v.number(),
+      responseOptions: v.array(v.object({
+        id: v.string(),
+        label: v.string(),
+        timeCost: v.number(),
+        moneyCost: v.number(),
+        outcome: v.string(),
+      })),
+      responded: v.boolean(),
+    })),
+    departments: v.optional(v.array(v.object({
+      name: v.string(),
+      budget: v.number(),
+      headCount: v.number(),
+      efficiency: v.number(),
+    }))),
+    investorStage: v.optional(v.union(
+      v.literal("none"),
+      v.literal("angel_outreach"),
+      v.literal("angel_funded"),
+      v.literal("seed_outreach"),
+      v.literal("seed_funded"),
+      v.literal("series_a"),
+      v.literal("ipo_prep"),
+      v.literal("public")
+    )),
+    totalFundingRaised: v.optional(v.number()),
+    equityGiven: v.optional(v.number()),
+
+    // ── BSG-style levers + channel mix ───────────────────
+    salesChannelMix: v.optional(v.object({
+      direct: v.number(),
+      wholesale: v.number(),
+      marketplace: v.number(),
+    })),
+    businessLevers: v.optional(v.object({
+      priceIndexPct: v.number(),        // -30 to +50 vs market rate
+      qualityBudgetLevel: v.string(),   // "low"|"medium"|"high"|"premium"
+      adSpendMonthly: v.number(),
+      productVariety: v.number(),       // 1–5 SKUs / lines
+      rdInvestment: v.number(),
+    })),
+
+    // ── KPI scorecard + credit ─────────────────────────
+    boardConfidence: v.optional(v.number()),
+    creditRating: v.optional(v.union(
+      v.literal("AAA"), v.literal("AA"), v.literal("A"),
+      v.literal("B"),   v.literal("C"),  v.literal("D")
+    )),
+    prevMonthMRR: v.optional(v.number()),
+
+    // ── AI competitors ─────────────────────────────────
+    competitors: v.optional(v.array(v.object({
+      name: v.string(),
+      strategy: v.string(),
+      priceIndex: v.number(),
+      qualityLevel: v.number(),
+      adSpend: v.number(),
+      brandReputation: v.number(),
+      marketShare: v.number(),
+      monthlyRevenue: v.number(),
+      trend: v.string(),              // "up"|"down"|"flat"
+    }))),
+    competitorIntelLog: v.optional(v.array(v.string())),
+
+    // ── Business mode + full-mode extensions ─────────────
+    businessMode: v.optional(v.union(v.literal("simplified"), v.literal("full"))),
+
+    financialHistory: v.optional(v.array(v.object({
+      age: v.number(),
+      month: v.number(),
+      revenue: v.number(),
+      revenueByChannel: v.object({ direct: v.number(), wholesale: v.number(), marketplace: v.number() }),
+      cogs: v.number(),
+      grossProfit: v.number(),
+      grossMarginPct: v.number(),
+      opExMarketing: v.number(),
+      opExPayroll: v.number(),
+      opExTools: v.number(),
+      netProfit: v.number(),
+      netMarginPct: v.number(),
+      burnRate: v.number(),
+      revenuePerEmployee: v.number(),
+      marketingROI: v.number(),
+      ltvCacRatio: v.number(),
+    }))),
+
+    adChannelAllocations: v.optional(v.array(v.object({
+      channelId: v.string(),
+      monthlyBudget: v.number(),
+    }))),
+
+    // ── Ecom product config ───────────────────────────────
+    ecomConfig: v.optional(v.object({
+      niche: v.string(),
+      products: v.array(v.object({
+        id: v.string(),
+        name: v.string(),
+        listPrice: v.number(),
+        unitCost: v.number(),
+        channelMix: v.object({
+          amazoom: v.number(),
+          shopeasy: v.number(),
+          other: v.number(),
+        }),
+      })),
+    })),
+
+    // ── Service business config ───────────────────────────
+    serviceConfig: v.optional(v.object({
+      selectedSubServices: v.array(v.string()),
+      clientCount: v.number(),
+      avgBillableRate: v.number(),
+      utilizationRate: v.number(),
+    })),
+
+    // ── Market positioning (premium/wages/quality) ────────
+    marketPositioning: v.optional(v.object({
+      pricingPremium:   v.number(),    // -20 to +100 (% above/below market rate)
+      wagesPremium:     v.number(),    // -20 to +50
+      qualityMultiplier: v.number(),   // 0.5 to 3.0 × COGS
+      targetSegment:    v.union(
+        v.literal("budget"), v.literal("value"), v.literal("market"),
+        v.literal("premium"), v.literal("luxury")
+      ),
+    })),
+
+    // ── Strategy positioning ──────────────────────────────
+    strategyPositioning: v.optional(v.object({
+      pricePosition:   v.union(v.literal("premium"), v.literal("parity"), v.literal("value")),
+      targetMarket:    v.union(v.literal("mass"),    v.literal("niche")),
+      qualityPosition: v.union(v.literal("budget"),  v.literal("standard"), v.literal("premium"), v.literal("luxury")),
+      growthPriority:  v.union(v.literal("acquire"), v.literal("retain")),
     })),
 
     // ── Dating / relationship system ──────────────────────

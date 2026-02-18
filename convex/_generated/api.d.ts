@@ -9,11 +9,17 @@
  */
 
 import type * as businessDecisions from "../businessDecisions.js";
+import type * as businessSimulator from "../businessSimulator.js";
+import type * as businessTypeProfiles from "../businessTypeProfiles.js";
 import type * as claude from "../claude.js";
+import type * as dating from "../dating.js";
+import type * as gameHelpers from "../gameHelpers.js";
 import type * as games from "../games.js";
+import type * as health from "../health.js";
 import type * as leaderboard from "../leaderboard.js";
-import type * as seedEvents from "../seedEvents.js";
+import type * as marketRates from "../marketRates.js";
 import type * as seedData from "../seedData.js";
+import type * as seedEvents from "../seedEvents.js";
 
 import type {
   ApiFromModules,
@@ -23,11 +29,17 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   businessDecisions: typeof businessDecisions;
+  businessSimulator: typeof businessSimulator;
+  businessTypeProfiles: typeof businessTypeProfiles;
   claude: typeof claude;
+  dating: typeof dating;
+  gameHelpers: typeof gameHelpers;
   games: typeof games;
+  health: typeof health;
   leaderboard: typeof leaderboard;
-  seedEvents: typeof seedEvents;
+  marketRates: typeof marketRates;
   seedData: typeof seedData;
+  seedEvents: typeof seedEvents;
 }>;
 
 /**

@@ -7,6 +7,9 @@ import { api } from "@/convex/_generated/api";
 import { Id } from "@/convex/_generated/dataModel";
 import { PixelBar } from "@/app/components/PixelBar";
 import { AnimatedMoney, AnimatedStat } from "@/app/components/AnimatedStat";
+import { getBusinessProfile } from "@/convex/businessTypeProfiles";
+import { AD_CHANNELS, ECOM_NICHES, SERVICE_NICHES } from "@/lib/gameUniverse";
+import { qualityPricingCeiling, channelEfficiencyMultiplier, CHANNEL_SWEET_SPOTS } from "@/convex/marketRates";
 
 const MONTHS = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
 
@@ -280,9 +283,22 @@ function GameContent() {
   const generateDatingMatches  = useMutation(api.games.generateDatingMatches);
   const breakUp                = useMutation(api.games.breakUp);
   const proposeMarriage        = useMutation(api.games.proposeMarriage);
-  const makeBusinessDecision   = useMutation(api.businessDecisions.makeBusinessDecision);
-  const hireEmployee           = useMutation(api.businessDecisions.hireEmployee);
-  const fireEmployee           = useMutation(api.businessDecisions.fireEmployee);
+  const makeBusinessDecision    = useMutation(api.businessDecisions.makeBusinessDecision);
+  const hireEmployee            = useMutation(api.businessDecisions.hireEmployee);
+  const fireEmployee            = useMutation(api.businessDecisions.fireEmployee);
+  const setBusinessMode         = useMutation(api.businessSimulator.setBusinessMode);
+  const setSalesChannelMix      = useMutation(api.businessSimulator.setSalesChannelMix);
+  const setBusinessLevers       = useMutation(api.businessSimulator.setBusinessLevers);
+  const setAdChannelAllocations = useMutation(api.businessSimulator.setAdChannelAllocations);
+  const setStrategyPositioning  = useMutation(api.businessSimulator.setStrategyPositioning);
+  const setEcomConfig           = useMutation(api.businessSimulator.setEcomConfig);
+  const setServiceConfig        = useMutation(api.businessSimulator.setServiceConfig);
+  const addRoadmapItem          = useMutation(api.businessSimulator.addRoadmapItem);
+  const investInRoadmapItem     = useMutation(api.businessSimulator.investInRoadmapItem);
+  const removeRoadmapItem       = useMutation(api.businessSimulator.removeRoadmapItem);
+  const respondCompEvent        = useMutation(api.businessSimulator.respondToCompetitorEvent);
+  const startInvestorOutreach   = useMutation(api.businessSimulator.startInvestorOutreach);
+  const setMarketPositioning    = useMutation(api.businessSimulator.setMarketPositioning);
 
   const [seeded,           setSeeded]           = useState(false);
   const [processing,       setProcessing]       = useState(false);
@@ -293,9 +309,27 @@ function GameContent() {
   const [showMatches,      setShowMatches]      = useState(false);
   const [newStack,         setNewStack]         = useState<string | null>(null);
   const [lifeExpColor,     setLifeExpColor]     = useState("#00ff41");
-  const [bizSubTab,        setBizSubTab]        = useState<"decisions" | "team" | "pipeline">("decisions");
+  const [bizSubTab,        setBizSubTab]        = useState<"decisions"|"team"|"pipeline"|"roadmap"|"metrics"|"strategy"|"scorecard"|"competitors"|"reports"|"investors">("decisions");
   const [diyMode,          setDiyMode]          = useState<Record<string, boolean>>({});
   const [fireConfirm,      setFireConfirm]      = useState<number | null>(null);
+  const [showBoardReport,  setShowBoardReport]  = useState(false);
+  const [pendingBoardRpt,  setPendingBoardRpt]  = useState(false);
+  // local lever / channel / market state (synced from game on load)
+  const [localLevers, setLocalLevers] = useState({ priceIndexPct: 0, qualityBudgetLevel: "medium", adSpendMonthly: 0, productVariety: 1, rdInvestment: 0 });
+  const [localChannelMix, setLocalChannelMix] = useState({ direct: 100, wholesale: 0, marketplace: 0 });
+  const [localMarket, setLocalMarket] = useState<{ pricingPremium: number; wagesPremium: number; qualityMultiplier: number; targetSegment: "budget"|"value"|"market"|"premium"|"luxury" }>({ pricingPremium: 0, wagesPremium: 0, qualityMultiplier: 1.0, targetSegment: "market" });
+  const [localAdAllocs, setLocalAdAllocs] = useState<Record<string, number>>({});
+  const [localStrategy, setLocalStrategy] = useState({ pricePosition: "parity" as const, targetMarket: "mass" as const, qualityPosition: "standard" as const, growthPriority: "acquire" as const });
+  // ecom niche picker state
+  const [ecomPickerNiche, setEcomPickerNiche] = useState<string | null>(null);
+  const [ecomPickerProducts, setEcomPickerProducts] = useState<any[]>([]);
+  // service picker state
+  const [servicePickerSubs, setServicePickerSubs] = useState<string[]>([]);
+  // roadmap state
+  const [addRoadmapMode,    setAddRoadmapMode]   = useState(false);
+  const [investTarget,      setInvestTarget]      = useState<string | null>(null);
+  const [investHours,       setInvestHours]       = useState(5);
+  const [investMoney,       setInvestMoney]       = useState(0);
 
   // Seed on mount
   useEffect(() => {
@@ -358,15 +392,177 @@ function GameContent() {
     } catch (e) { console.error(e); }
   };
 
+  // Sync lever/channel/strategy state from game when it loads
+  useEffect(() => {
+    if (!game) return;
+    if (game.businessLevers)        setLocalLevers(game.businessLevers);
+    if (game.salesChannelMix)       setLocalChannelMix(game.salesChannelMix);
+    if (game.strategyPositioning)   setLocalStrategy(game.strategyPositioning);
+    if (game.marketPositioning)     setLocalMarket(game.marketPositioning);
+    if (game.adChannelAllocations) {
+      const m: Record<string, number> = {};
+      for (const a of game.adChannelAllocations) m[a.channelId] = a.monthlyBudget;
+      setLocalAdAllocs(m);
+    }
+  }, [game?._id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Show board report once game data refreshes after endMonth
+  useEffect(() => {
+    if (pendingBoardRpt && game?.boardConfidence !== undefined) {
+      setPendingBoardRpt(false);
+      setShowBoardReport(true);
+    }
+  }, [game?.boardConfidence, pendingBoardRpt]);
+
   const handleEndMonth = async () => {
     if (!gameId || processing) return;
     setProcessing(true);
     try {
       const result = await endMonth({ gameId }) as any;
       if (result?.newlyUnlockedStack) setNewStack(result.newlyUnlockedStack);
+      if (result?.stageJustUnlocked)  notify(`🚀 Business upgraded to ${result.stageJustUnlocked.toUpperCase()} STAGE!`, "success");
+      // Trigger board report for growth/scale full-mode businesses
+      const stage = result?.stageJustUnlocked ?? game?.businessStageLabel;
+      if (game?.activeBusiness && (stage === "growth" || stage === "scale") && (game?.businessMode ?? "simplified") === "full") {
+        setPendingBoardRpt(true);
+      }
     } catch { notify("Error advancing month", "error"); }
     finally { setProcessing(false); }
   };
+
+  // ── Business sim handlers ──────────────────────────────────────────────────
+
+  const handleSaveLevers = async () => {
+    if (!gameId || processing) return;
+    setProcessing(true);
+    try {
+      await setBusinessLevers({ gameId, ...localLevers });
+      const total = localChannelMix.direct + localChannelMix.wholesale + localChannelMix.marketplace;
+      if (Math.abs(total - 100) <= 1) await setSalesChannelMix({ gameId, ...localChannelMix });
+      const allocs = Object.entries(localAdAllocs).filter(([, v]) => v > 0).map(([channelId, monthlyBudget]) => ({ channelId, monthlyBudget }));
+      if (allocs.length) await setAdChannelAllocations({ gameId, allocations: allocs });
+      notify("Strategy saved! Will apply next month.", "success");
+    } catch { notify("Save failed", "error"); }
+    finally { setProcessing(false); }
+  };
+
+  const handleSaveStrategy = async () => {
+    if (!gameId || processing) return;
+    setProcessing(true);
+    try {
+      await setStrategyPositioning({ gameId, ...localStrategy });
+      await setMarketPositioning({ gameId, ...localMarket });
+      // also save levers + channel mix in one shot
+      await setBusinessLevers({ gameId, ...localLevers });
+      const total = localChannelMix.direct + localChannelMix.wholesale + localChannelMix.marketplace;
+      if (Math.abs(total - 100) <= 1) await setSalesChannelMix({ gameId, ...localChannelMix });
+      const allocs = Object.entries(localAdAllocs).filter(([, v]) => v > 0).map(([channelId, monthlyBudget]) => ({ channelId, monthlyBudget }));
+      if (allocs.length) await setAdChannelAllocations({ gameId, allocations: allocs });
+      notify("Strategy saved — takes effect next month.", "success");
+    } catch { notify("Save failed", "error"); }
+    finally { setProcessing(false); }
+  };
+
+  const handleSaveEcomConfig = async () => {
+    if (!gameId || !ecomPickerNiche || ecomPickerProducts.length === 0) return;
+    setProcessing(true);
+    try {
+      await setEcomConfig({ gameId, niche: ecomPickerNiche, products: ecomPickerProducts });
+      notify("Ecom products configured!", "success");
+    } catch { notify("Save failed", "error"); }
+    finally { setProcessing(false); }
+  };
+
+  const handleSaveServiceConfig = async (rate: number, utilization: number) => {
+    if (!gameId || servicePickerSubs.length === 0) return;
+    setProcessing(true);
+    try {
+      await setServiceConfig({ gameId, selectedSubServices: servicePickerSubs, clientCount: 5, avgBillableRate: rate, utilizationRate: utilization });
+      notify("Service config saved!", "success");
+    } catch { notify("Save failed", "error"); }
+    finally { setProcessing(false); }
+  };
+
+  const handleAddRoadmap = async (tpl: any) => {
+    if (!gameId) return;
+    setProcessing(true);
+    try {
+      const res = await addRoadmapItem({ gameId, title: tpl.title, description: tpl.description, category: tpl.category, timeRequired: tpl.timeRequired, moneyRequired: tpl.moneyRequired, expectedImpact: tpl.expectedImpact, rippleEffect: tpl.rippleEffect, rippleValue: tpl.rippleValue }) as any;
+      notify(res.message ?? "Added to roadmap", "success");
+      setAddRoadmapMode(false);
+    } catch { notify("Failed to add", "error"); }
+    finally { setProcessing(false); }
+  };
+
+  const handleInvestRoadmap = async (itemId: string) => {
+    if (!gameId) return;
+    setProcessing(true);
+    try {
+      const res = await investInRoadmapItem({ gameId, itemId, hoursThisMonth: investHours, moneyThisMonth: investMoney }) as any;
+      notify(res.message ?? "Invested!", res.completed ? "success" : "info");
+      setInvestTarget(null);
+    } catch { notify("Failed", "error"); }
+    finally { setProcessing(false); }
+  };
+
+  const handleRespondCompEvent = async (responseId: string) => {
+    if (!gameId) return;
+    setProcessing(true);
+    try {
+      await respondCompEvent({ gameId, responseId });
+      notify("Response recorded", "success");
+    } catch { notify("Failed", "error"); }
+    finally { setProcessing(false); }
+  };
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+
+  function updateChannelMix(changed: "direct" | "wholesale" | "marketplace", newVal: number) {
+    const others = (["direct", "wholesale", "marketplace"] as const).filter(c => c !== changed);
+    const remaining = 100 - newVal;
+    const curOtherTotal = localChannelMix[others[0]] + localChannelMix[others[1]];
+    if (curOtherTotal === 0) {
+      setLocalChannelMix({ ...localChannelMix, [changed]: newVal, [others[0]]: Math.round(remaining / 2), [others[1]]: remaining - Math.round(remaining / 2) });
+    } else {
+      const scale = remaining / curOtherTotal;
+      setLocalChannelMix({ ...localChannelMix, [changed]: newVal, [others[0]]: Math.round(localChannelMix[others[0]] * scale), [others[1]]: Math.max(0, remaining - Math.round(localChannelMix[others[0]] * scale)) });
+    }
+  }
+
+  function computeBoardReport(g: any) {
+    if (!g?.businessMetrics) return null;
+    const profile  = getBusinessProfile(g.activeBusiness?.businessTypeName ?? "");
+    const m        = g.businessMetrics;
+    const prev     = g.prevMonthMRR ?? m.mrr * 0.9;
+    const mom      = prev > 0 ? ((m.mrr - prev) / prev) * 100 : 0;
+    const gm       = m.grossMarginPct * 100;
+    const rev      = g.activeBusiness?.monthlyRevenue ?? m.mrr;
+    const opEx     = (g.businessEmployees ?? []).reduce((s: number, e: any) => s + e.monthlySalary, 0) + (g.businessLevers?.adSpendMonthly ?? 0);
+    const profit   = rev * m.grossMarginPct - opEx;
+    const kpi1     = profit >= rev * 0.2 ? 2 : profit >= 0 ? 1 : 0;
+    const kpi2     = gm >= 60 ? 2 : gm >= 45 ? 1 : 0;
+    const kpi3     = mom >= 10 ? 2 : mom >= 0 ? 1 : 0;
+    const kpi4     = m.brandReputation >= 65 ? 2 : m.brandReputation >= 40 ? 1 : 0;
+    const cr       = g.creditRating ?? "B";
+    const kpi5     = ["AAA","AA","A","B"].includes(cr) ? 2 : cr === "C" ? 1 : 0;
+    const cTotal   = (g.competitors ?? []).reduce((s: number, c: any) => s + c.marketShare, 0);
+    const pShare   = 100 - cTotal;
+    const kpiData  = [
+      { label: `${profile.kpiLabels.profit} vs Industry Avg`, status: kpi1, detail: `$${profit.toLocaleString()}/mo` },
+      { label: `${profile.kpiLabels.margin} > 60%`,           status: kpi2, detail: `${gm.toFixed(1)}%` },
+      { label: `${profile.kpiLabels.growth} > 10% MoM`,       status: kpi3, detail: `${mom.toFixed(1)}% MoM` },
+      { label: `${profile.kpiLabels.brand} > 65`,             status: kpi4, detail: `${m.brandReputation}/100` },
+      { label: "Credit Rating B+",                             status: kpi5, detail: cr },
+    ];
+    let rec = "";
+    if      (gm < 40)              rec = `${profile.kpiLabels.margin} critically low at ${gm.toFixed(0)}%. Raise prices immediately.`;
+    else if (gm < 60)              rec = `Shift more sales to ${profile.channels.direct} channel to improve ${profile.kpiLabels.margin}.`;
+    else if (m.churnRate > 0.1)    rec = `Churn is ${(m.churnRate*100).toFixed(1)}%/mo. Invest in ${profile.levers.quality}.`;
+    else if (mom < 0)              rec = `${profile.kpiLabels.growth} declining. Re-evaluate ${profile.levers.adSpend} strategy.`;
+    else if (pShare < 20)          rec = `Market share ${pShare}%. Adjust your ${profile.levers.price} positioning.`;
+    else                           rec = `Strong momentum at ${mom.toFixed(1)}% growth. Invest in ${profile.levers.rd} to extend your lead.`;
+    return { profile, kpiData, pShare, boardConfidence: g.boardConfidence ?? 0, creditRating: cr, recommendation: rec, competitors: g.competitors ?? [] };
+  }
 
   const handleDecision = async (decisionId: string) => {
     if (!gameId || processing) return;
@@ -501,6 +697,22 @@ function GameContent() {
   // Dating state
   const hasOrganic = (game.pendingMatches?.length ?? 0) > 0 && !game.currentPartner && game.relationshipStatus === "single";
   const hasMatches = (game.pendingMatches?.length ?? 0) > 0 && showMatches;
+
+  // Business sim derived vars
+  const bizMode    = game.businessMode ?? "simplified";
+  const bizEngine  = game.activeBusiness?.businessEngine ?? "service";
+  const bizStage   = game.businessStageLabel ?? "startup";
+  const bizProfile = game.activeBusiness ? getBusinessProfile(game.activeBusiness.businessTypeName ?? "") : null;
+  const bizFull    = bizMode === "full" && (bizStage === "growth" || bizStage === "scale");
+  const ROADMAP_TPLS = [
+    { title:"Mobile App", description:"Build a native iOS/Android app.", category:"product" as const, timeRequired:60, moneyRequired:5000, expectedImpact:"+25% conversion", rippleEffect:"conversion_boost", rippleValue:25 },
+    { title:"API / Integrations", description:"Connect to tools customers use.", category:"feature" as const, timeRequired:40, moneyRequired:0, expectedImpact:"-20% churn", rippleEffect:"churn_reduction", rippleValue:20 },
+    { title:"Premium Tier", description:"Add a high-value enterprise plan.", category:"product" as const, timeRequired:20, moneyRequired:0, expectedImpact:"+$3k-15k MRR", rippleEffect:"monthly_revenue_add", rippleValue:5000 },
+    { title:"Analytics Dashboard", description:"Deep usage insights for customers.", category:"feature" as const, timeRequired:35, moneyRequired:1000, expectedImpact:"+15% LTV", rippleEffect:"ltv_boost", rippleValue:15 },
+    { title:"Onboarding Overhaul", description:"Redesign first 7-day experience.", category:"improvement" as const, timeRequired:25, moneyRequired:500, expectedImpact:"+30% activation", rippleEffect:"conversion_boost", rippleValue:30 },
+    { title:"White-label Version", description:"Let agencies resell your product.", category:"product" as const, timeRequired:50, moneyRequired:2000, expectedImpact:"+$5k-20k MRR", rippleEffect:"monthly_revenue_add", rippleValue:8000 },
+    { title:"AI Feature", description:"Add AI-powered capability to product.", category:"feature" as const, timeRequired:45, moneyRequired:3000, expectedImpact:"+20% retention", rippleEffect:"churn_reduction", rippleValue:20 },
+  ];
 
   return (
     <div className="crt min-h-screen bg-[#0a0a0a] flex flex-col">
@@ -878,36 +1090,51 @@ function GameContent() {
                 </div>
               ) : (
                 <>
+                  {/* Mode toggle */}
+                  <div className="flex gap-1 items-center">
+                    <span className="font-terminal text-xs opacity-40">MODE:</span>
+                    {(["simplified","full"] as const).map(m => (
+                      <button key={m} onClick={() => { if (gameId) setBusinessMode({ gameId, mode: m }); }}
+                        className={`font-pixel text-xs px-2 py-0.5 border transition-all ${bizMode === m ? "bg-[#ff6600] text-black border-[#ff6600]" : "text-[#ff6600] border-[#ff6600] opacity-40 hover:opacity-80"}`}>
+                        {m === "simplified" ? "SIMPLIFIED" : "FULL SIM"}
+                      </button>
+                    ))}
+                    {bizStage !== "startup" && (
+                      <span className={`font-pixel text-xs px-2 py-0.5 ml-auto ${bizStage === "scale" ? "text-[#ff00ff]" : "text-[#ffb000]"}`}>
+                        ● {bizStage.toUpperCase()}
+                      </span>
+                    )}
+                  </div>
+
                   {/* Time meter */}
                   <div className="flex items-center gap-2 p-2 border border-[#ff6600] border-opacity-30">
-                    <span className="font-terminal text-xs opacity-70">⏰ TIME REMAINING:</span>
-                    <span className="font-terminal text-[#ffb000] text-base font-bold">
-                      {Math.max(0, 160 - (game.monthlyTimeUsed ?? 0))} hrs
-                    </span>
+                    <span className="font-terminal text-xs opacity-70">⏰ TIME:</span>
+                    <span className="font-terminal text-[#ffb000] text-sm font-bold">{Math.max(0, 160 - (game.monthlyTimeUsed ?? 0))} hrs left</span>
                     <div className="flex-1 h-2 bg-[#1a1a1a] rounded overflow-hidden">
-                      <div
-                        className="h-full transition-all"
-                        style={{
-                          width: `${Math.min(100, ((game.monthlyTimeUsed ?? 0) / 160) * 100)}%`,
-                          backgroundColor: (game.monthlyTimeUsed ?? 0) > 140 ? "#ff0044" : (game.monthlyTimeUsed ?? 0) > 100 ? "#ffb000" : "#00ff41",
-                        }}
-                      />
+                      <div className="h-full transition-all" style={{ width: `${Math.min(100, ((game.monthlyTimeUsed ?? 0) / 160) * 100)}%`, backgroundColor: (game.monthlyTimeUsed ?? 0) > 140 ? "#ff0044" : (game.monthlyTimeUsed ?? 0) > 100 ? "#ffb000" : "#00ff41" }} />
                     </div>
+                    {game.activeBusiness?.monthlyRevenue > 0 && (
+                      <span className="font-terminal text-xs text-[#00ff41] opacity-70">${game.activeBusiness.monthlyRevenue.toLocaleString()}/mo</span>
+                    )}
                   </div>
 
                   {/* Sub-tab nav */}
-                  <div className="flex gap-1">
-                    {(["decisions","team","pipeline"] as const).map(sub => (
-                      <button key={sub} onClick={() => setBizSubTab(sub)}
-                        className={`font-pixel text-xs px-2 py-1 border transition-all ${
-                          bizSubTab === sub
-                            ? "bg-[#ff6600] text-black border-[#ff6600]"
-                            : "bg-transparent text-[#ff6600] border-[#ff6600] opacity-50 hover:opacity-100"
-                        }`}>
-                        {sub === "decisions" ? "DECISIONS" : sub === "team" ? "TEAM" : "PIPELINE"}
-                      </button>
-                    ))}
-                  </div>
+                  {(() => {
+                    const baseTabs = ["decisions","team","pipeline"];
+                    const fullTabs = bizFull ? ["roadmap","metrics","strategy","scorecard","competitors","reports",...(bizStage==="scale"?["investors"]:[])] : [];
+                    const allTabs  = [...baseTabs, ...fullTabs];
+                    const LABELS: Record<string,string> = { decisions:"DECISIONS", team:"TEAM", pipeline:"PIPELINE", roadmap:"ROADMAP", metrics:"METRICS", strategy:"STRATEGY", scorecard:"SCORECARD", competitors:"RIVALS", reports:"REPORTS", investors:"INVEST" };
+                    return (
+                      <div className="flex flex-wrap gap-1">
+                        {allTabs.map(sub => (
+                          <button key={sub} onClick={() => setBizSubTab(sub as any)}
+                            className={`font-pixel text-xs px-2 py-0.5 border transition-all ${bizSubTab === sub ? "bg-[#ff6600] text-black border-[#ff6600]" : "text-[#ff6600] border-[#ff6600] opacity-40 hover:opacity-80"}`}>
+                            {LABELS[sub] ?? sub.toUpperCase()}
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })()}
 
                   {/* DECISIONS sub-tab */}
                   {bizSubTab === "decisions" && (
@@ -1081,6 +1308,373 @@ function GameContent() {
                       )}
                     </div>
                   )}
+
+                  {/* ── ROADMAP sub-tab ────────────────────────── */}
+                  {bizSubTab === "roadmap" && bizFull && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-pixel text-xs text-[#ffb000]">PRODUCT ROADMAP ({(game.productRoadmap ?? []).filter((i: any) => !i.completedAt).length}/3 active)</span>
+                        {(game.productRoadmap ?? []).filter((i: any) => !i.completedAt).length < 3 && !addRoadmapMode && (
+                          <button onClick={() => setAddRoadmapMode(true)} className="font-pixel text-xs px-2 py-0.5 border border-[#00ff41] text-[#00ff41] hover:opacity-80">+ ADD ITEM</button>
+                        )}
+                      </div>
+                      {addRoadmapMode && (
+                        <div className="border border-[#00ff41] border-opacity-40 p-2 space-y-1">
+                          <div className="font-pixel text-xs text-[#00ff41] mb-1">PICK A TEMPLATE:</div>
+                          {ROADMAP_TPLS.map((tpl, idx) => (
+                            <div key={idx} className="flex items-center justify-between p-1 border border-[#00ff41] border-opacity-20 hover:border-opacity-50">
+                              <div>
+                                <span className="font-terminal text-[#ffb000] text-xs">{tpl.title}</span>
+                                <span className="font-terminal text-xs opacity-50 ml-2">{tpl.expectedImpact}</span>
+                                <span className="font-terminal text-xs opacity-40 ml-2">⏰{tpl.timeRequired}h  ${tpl.moneyRequired}</span>
+                              </div>
+                              <button onClick={() => handleAddRoadmap(tpl)} disabled={processing} className="font-pixel text-xs px-2 py-0.5 bg-[#00ff41] text-black">ADD</button>
+                            </div>
+                          ))}
+                          <button onClick={() => setAddRoadmapMode(false)} className="font-pixel text-xs opacity-50 mt-1">CANCEL</button>
+                        </div>
+                      )}
+                      {(game.productRoadmap ?? []).length === 0 && !addRoadmapMode && (
+                        <div className="font-terminal text-xs opacity-40 p-2">No roadmap items. Add up to 3 items to invest time/money each month.</div>
+                      )}
+                      {(game.productRoadmap ?? [] as any[]).map((item: any) => (
+                        <div key={item.id} className={`border p-2 ${item.completedAt ? "border-[#00ff41] opacity-60" : "border-[#ffb000] border-opacity-40"}`}>
+                          <div className="flex items-start justify-between mb-1">
+                            <div>
+                              <span className="font-terminal text-xs px-1 mr-1 rounded" style={{ backgroundColor: item.category === "product" ? "#ff6600" : item.category === "feature" ? "#00aaff" : "#ffb000", color: "#000" }}>{item.category.toUpperCase()}</span>
+                              <span className="font-terminal text-[#ffb000] text-sm">{item.title}</span>
+                            </div>
+                            {!item.completedAt && <button onClick={() => { if (gameId) removeRoadmapItem({ gameId, itemId: item.id }); }} className="font-pixel text-xs opacity-40 hover:opacity-80 text-[#ff0044]">✕</button>}
+                          </div>
+                          <div className="font-terminal text-xs opacity-50 mb-1">{item.description} → <span className="text-[#00ff41]">{item.expectedImpact}</span></div>
+                          <div className="h-2 bg-[#1a1a1a] rounded overflow-hidden mb-1">
+                            <div className="h-full transition-all bg-[#ffb000]" style={{ width: `${item.progressPct}%` }} />
+                          </div>
+                          <div className="font-terminal text-xs opacity-50">⏰ {item.timeInvested}/{item.timeInvestmentRequired}h  💰 ${item.moneyInvested}/${item.moneyInvestmentRequired}</div>
+                          {item.completedAt && <div className="font-pixel text-xs text-[#00ff41] mt-1">✅ COMPLETED</div>}
+                          {!item.completedAt && (
+                            investTarget === item.id ? (
+                              <div className="flex gap-1 mt-1 items-center flex-wrap">
+                                <span className="font-terminal text-xs opacity-60">hrs:</span>
+                                <input type="number" value={investHours} onChange={e => setInvestHours(Number(e.target.value))} min={0} max={Math.max(0, 160-(game.monthlyTimeUsed??0))} className="w-12 bg-[#111] border border-[#ffb000] text-[#ffb000] font-terminal text-xs px-1" />
+                                <span className="font-terminal text-xs opacity-60">$:</span>
+                                <input type="number" value={investMoney} onChange={e => setInvestMoney(Number(e.target.value))} min={0} className="w-16 bg-[#111] border border-[#ffb000] text-[#ffb000] font-terminal text-xs px-1" />
+                                <button onClick={() => handleInvestRoadmap(item.id)} disabled={processing} className="font-pixel text-xs px-2 py-0.5 bg-[#ffb000] text-black">INVEST</button>
+                                <button onClick={() => setInvestTarget(null)} className="font-pixel text-xs opacity-40">✕</button>
+                              </div>
+                            ) : (
+                              <button onClick={() => { setInvestTarget(item.id); setInvestHours(5); setInvestMoney(0); }} className="font-pixel text-xs px-2 py-0.5 border border-[#ffb000] text-[#ffb000] mt-1 hover:opacity-80">INVEST THIS MONTH</button>
+                            )
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* ── METRICS sub-tab ────────────────────────── */}
+                  {bizSubTab === "metrics" && bizFull && (() => {
+                    const m = game.businessMetrics;
+                    if (!m) return <div className="font-terminal text-xs opacity-40 p-2">Metrics unlock at GROWTH stage.</div>;
+                    const prev = game.prevMonthMRR ?? m.mrr * 0.9;
+                    const mom  = prev > 0 ? ((m.mrr - prev) / prev * 100) : 0;
+                    const ltvcac = m.cac > 0 ? (m.ltv / m.cac) : 0;
+                    const runway = game.monthlyExpenses > 0 ? Math.round(game.cash / game.monthlyExpenses) : 99;
+                    const compTotal = (game.competitors ?? []).reduce((s: number, c: any) => s + c.marketShare, 0);
+                    const rows = [
+                      { label: "MRR", val: `$${m.mrr.toLocaleString()}/mo`, sub: `${mom >= 0 ? "↑" : "↓"} ${Math.abs(mom).toFixed(1)}% MoM`, good: mom >= 0 },
+                      { label: "CUSTOMERS", val: m.customerCount.toString(), good: true },
+                      { label: "CHURN RATE", val: `${(m.churnRate*100).toFixed(1)}%/mo`, good: m.churnRate < 0.07 },
+                      { label: "BRAND REP", val: `${m.brandReputation}/100`, good: m.brandReputation >= 65 },
+                      { label: "CAC", val: `$${m.cac}`, good: true },
+                      { label: "LTV", val: `$${m.ltv}`, good: true },
+                      { label: "LTV:CAC", val: `${ltvcac.toFixed(1)}x`, good: ltvcac >= 3 },
+                      { label: "LEADS/MO", val: m.leadsPerMonth.toString(), good: true },
+                      { label: "CONVERSION", val: `${(m.conversionRate*100).toFixed(1)}%`, good: m.conversionRate >= 0.10 },
+                      { label: "MARKET SHARE", val: `${100 - compTotal}%`, good: (100-compTotal) >= 20 },
+                      { label: "CASH RUNWAY", val: `${runway} mo`, good: runway >= 6 },
+                    ];
+                    return (
+                      <div className="grid grid-cols-2 gap-1">
+                        {rows.map(r => (
+                          <div key={r.label} className="border border-[#ff6600] border-opacity-20 p-1.5">
+                            <div className="font-terminal text-xs opacity-50">{r.label}</div>
+                            <div className="font-terminal text-sm" style={{ color: r.good ? "#00ff41" : "#ff0044" }}>{r.val}</div>
+                            {"sub" in r && <div className="font-terminal text-xs opacity-50">{(r as any).sub}</div>}
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+
+                  {/* ── STRATEGY sub-tab ───────────────────────── */}
+                  {bizSubTab === "strategy" && bizFull && (() => {
+                    const ceiling = qualityPricingCeiling(localMarket.qualityMultiplier);
+                    const overCeiling = localMarket.pricingPremium > ceiling + 15;
+                    const aligned = (AD_CHANNELS as readonly any[]).filter(ch => {
+                      const spot = CHANNEL_SWEET_SPOTS[ch.id];
+                      return spot && localMarket.pricingPremium >= spot.min && localMarket.pricingPremium <= spot.max;
+                    }).map(ch => ch.name);
+                    const misaligned = (AD_CHANNELS as readonly any[]).filter(ch => {
+                      const spot = CHANNEL_SWEET_SPOTS[ch.id];
+                      if (!spot) return false;
+                      const dist = Math.min(Math.abs(localMarket.pricingPremium - spot.min), Math.abs(localMarket.pricingPremium - spot.max));
+                      return dist > 20;
+                    }).map(ch => ch.name);
+                    const totalAdBudget = Object.values(localAdAllocs).reduce((s, v) => s + v, 0);
+
+                    const PRICE_OPTS = [{ l:"Budget", s:"budget" as const, p:-20 },{ l:"Value", s:"value" as const, p:-10 },{ l:"Market", s:"market" as const, p:0 },{ l:"Premium", s:"premium" as const, p:30 },{ l:"Luxury", s:"luxury" as const, p:60 }];
+                    const WAGES_OPTS = [{ l:"Below Mkt", w:-15 },{ l:"Market", w:0 },{ l:"Above Mkt", w:15 },{ l:"Top of Mkt", w:30 }];
+                    const QUAL_OPTS  = [{ l:"0.5x Budget", q:0.5 },{ l:"1.0x Std", q:1.0 },{ l:"1.5x Good", q:1.5 },{ l:"2.0x Premium", q:2.0 },{ l:"3.0x Luxury", q:3.0 }];
+
+                    return (
+                      <div className="space-y-3">
+
+                        {/* PRICING PREMIUM */}
+                        <div>
+                          <div className="font-pixel text-xs text-[#ffb000] mb-1">PRICING vs MARKET RATE</div>
+                          <div className="flex flex-wrap gap-1">
+                            {PRICE_OPTS.map(opt => (
+                              <button key={opt.s} onClick={() => setLocalMarket(m => ({ ...m, pricingPremium: opt.p, targetSegment: opt.s }))}
+                                className={`font-pixel text-xs px-2 py-0.5 border transition-all ${localMarket.targetSegment === opt.s ? "bg-[#ff6600] text-black border-[#ff6600]" : "text-[#ff6600] border-[#ff6600] opacity-50 hover:opacity-80"}`}>
+                                {opt.l} {opt.p >= 0 ? `+${opt.p}%` : `${opt.p}%`}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* WAGES PREMIUM */}
+                        <div>
+                          <div className="font-pixel text-xs text-[#ffb000] mb-1">WAGES vs MARKET RATE</div>
+                          <div className="flex flex-wrap gap-1">
+                            {WAGES_OPTS.map(opt => (
+                              <button key={opt.w} onClick={() => setLocalMarket(m => ({ ...m, wagesPremium: opt.w }))}
+                                className={`font-pixel text-xs px-2 py-0.5 border transition-all ${localMarket.wagesPremium === opt.w ? "bg-[#00aaff] text-black border-[#00aaff]" : "text-[#00aaff] border-[#00aaff] opacity-50 hover:opacity-80"}`}>
+                                {opt.l} {opt.w >= 0 ? `+${opt.w}%` : `${opt.w}%`}
+                              </button>
+                            ))}
+                          </div>
+                          {localMarket.wagesPremium < -10 && <div className="font-terminal text-xs text-[#ff0044] mt-0.5">⚠ Below-market wages: smaller candidate pool, lower reliability.</div>}
+                          {localMarket.wagesPremium >= 30  && <div className="font-terminal text-xs text-[#00ff41] mt-0.5">✓ Top-of-market wages: attracts high-reliability candidates.</div>}
+                        </div>
+
+                        {/* QUALITY MULTIPLIER */}
+                        <div>
+                          <div className="font-pixel text-xs text-[#ffb000] mb-1">QUALITY LEVEL (affects COGS)</div>
+                          <div className="flex flex-wrap gap-1">
+                            {QUAL_OPTS.map(opt => (
+                              <button key={opt.q} onClick={() => setLocalMarket(m => ({ ...m, qualityMultiplier: opt.q }))}
+                                className={`font-pixel text-xs px-2 py-0.5 border transition-all ${localMarket.qualityMultiplier === opt.q ? "bg-[#00ff41] text-black border-[#00ff41]" : "text-[#00ff41] border-[#00ff41] opacity-50 hover:opacity-80"}`}>
+                                {opt.l}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* LIVE FEEDBACK */}
+                        <div className={`p-2 border text-xs font-terminal ${overCeiling ? "border-[#ff0044] text-[#ff0044]" : "border-[#00ff41] text-[#00ff41]"}`}>
+                          {overCeiling
+                            ? `⚠ At ${localMarket.qualityMultiplier}x quality, pricing ceiling is +${ceiling}% — you're ${localMarket.pricingPremium - ceiling}% above it. Brand will erode each month.`
+                            : `✓ Pricing within quality ceiling (+${ceiling}%). No brand erosion risk.`
+                          }
+                        </div>
+
+                        {/* CHANNEL ALIGNMENT */}
+                        {aligned.length > 0 && (
+                          <div className="text-xs font-terminal opacity-70">
+                            <span className="text-[#00ff41]">✓ Best channels at {localMarket.pricingPremium >= 0 ? "+" : ""}{localMarket.pricingPremium}%: </span>{aligned.slice(0,3).join(", ")}
+                            {misaligned.length > 0 && <><br/><span className="text-[#ff0044]">⚠ Avoid: </span>{misaligned.slice(0,2).join(", ")}</>}
+                          </div>
+                        )}
+
+                        {/* AD CHANNEL BUDGET */}
+                        <div>
+                          <div className="font-pixel text-xs text-[#ffb000] mb-1">AD CHANNEL BUDGET (total: ${totalAdBudget.toLocaleString()}/mo)</div>
+                          <div className="space-y-1 max-h-48 overflow-y-auto">
+                            {(AD_CHANNELS as readonly any[]).map(ch => {
+                              const spot = CHANNEL_SWEET_SPOTS[ch.id];
+                              const eff  = spot ? Math.round(channelEfficiencyMultiplier(ch.id, localMarket.pricingPremium) * 100) : 100;
+                              const budget = localAdAllocs[ch.id] ?? 0;
+                              return (
+                                <div key={ch.id} className="flex items-center gap-2">
+                                  <span className="font-terminal text-xs w-4">{ch.icon}</span>
+                                  <span className="font-terminal text-xs opacity-70 flex-1 truncate">{ch.name}</span>
+                                  <span className="font-terminal text-xs w-8 text-right" style={{ color: eff >= 80 ? "#00ff41" : eff >= 50 ? "#ffb000" : "#ff0044" }}>{eff}%</span>
+                                  <span className="font-terminal text-xs opacity-50">$</span>
+                                  <input type="number" value={budget} onChange={e => setLocalAdAllocs(a => ({ ...a, [ch.id]: Number(e.target.value) }))} min={0} step={50} className="w-16 bg-[#111] border border-[#ff6600] border-opacity-40 text-[#ffb000] font-terminal text-xs px-1 text-right" />
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* CHANNEL MIX */}
+                        {bizProfile && (
+                          <div>
+                            <div className="font-pixel text-xs text-[#ffb000] mb-1">SALES CHANNEL MIX</div>
+                            {(["direct","wholesale","marketplace"] as const).map(ch => (
+                              <div key={ch} className="flex items-center gap-2 mb-1">
+                                <span className="font-terminal text-xs w-32 truncate opacity-70">{bizProfile.channels[ch]}</span>
+                                <input type="range" min={0} max={100} value={localChannelMix[ch]} onChange={e => updateChannelMix(ch, Number(e.target.value))} className="flex-1 accent-[#ff6600]" />
+                                <span className="font-terminal text-xs w-8 text-right text-[#ffb000]">{localChannelMix[ch]}%</span>
+                                <span className="font-terminal text-xs opacity-40">{bizProfile.channelMargins[ch]}%M</span>
+                              </div>
+                            ))}
+                            <div className="font-terminal text-xs opacity-40">Channel total: {localChannelMix.direct+localChannelMix.wholesale+localChannelMix.marketplace}% (must = 100%)</div>
+                          </div>
+                        )}
+
+                        <button onClick={handleSaveStrategy} disabled={processing} className="w-full font-pixel text-xs py-1.5 bg-[#ff6600] text-black hover:opacity-90 disabled:opacity-40">
+                          APPLY STRATEGY
+                        </button>
+                      </div>
+                    );
+                  })()}
+
+                  {/* ── SCORECARD sub-tab ──────────────────────── */}
+                  {bizSubTab === "scorecard" && bizFull && (() => {
+                    const report = computeBoardReport(game);
+                    if (!report) return <div className="font-terminal text-xs opacity-40 p-2">Scorecard unlocks at GROWTH stage.</div>;
+                    const CR_COLORS: Record<string,string> = { AAA:"#00ff41", AA:"#00ff41", A:"#00ff41", B:"#ffb000", C:"#ff6600", D:"#ff0044" };
+                    const STATUS_ICON = ["❌","⚠️","✅"];
+                    return (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="font-pixel text-xs text-[#ffb000]">BOARD SCORECARD</span>
+                          <span className="font-pixel text-xs px-2 py-0.5 rounded" style={{ backgroundColor: CR_COLORS[report.creditRating] ?? "#ffb000", color: "#000" }}>
+                            {report.creditRating} CREDIT
+                          </span>
+                        </div>
+                        {report.kpiData.map((k, i) => (
+                          <div key={i} className="flex items-center gap-2 p-1.5 border border-[#ff6600] border-opacity-20">
+                            <span className="text-sm">{STATUS_ICON[k.status]}</span>
+                            <span className="font-terminal text-xs flex-1 opacity-70">{k.label}</span>
+                            <span className="font-terminal text-xs" style={{ color: k.status === 2 ? "#00ff41" : k.status === 1 ? "#ffb000" : "#ff0044" }}>{k.detail}</span>
+                          </div>
+                        ))}
+                        <div className="p-2 border border-[#ff6600] border-opacity-30">
+                          <div className="font-pixel text-xs text-[#ffb000] mb-1">BOARD CONFIDENCE</div>
+                          <div className="h-3 bg-[#1a1a1a] rounded overflow-hidden">
+                            <div className="h-full transition-all" style={{ width: `${report.boardConfidence}%`, backgroundColor: report.boardConfidence >= 60 ? "#00ff41" : report.boardConfidence >= 40 ? "#ffb000" : "#ff0044" }} />
+                          </div>
+                          <div className="font-terminal text-xs opacity-60 mt-1">{report.boardConfidence}% confidence · Market #{[...Array(3).keys()].findIndex(() => true)+1} of 4 · {report.pShare}% share</div>
+                        </div>
+                        <div className="p-2 border border-[#00aaff] border-opacity-30 font-terminal text-xs text-[#00aaff]">
+                          💡 {report.recommendation}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* ── COMPETITORS sub-tab ────────────────────── */}
+                  {bizSubTab === "competitors" && bizFull && (
+                    <div className="space-y-2">
+                      {/* Active competitor event */}
+                      {game.activeCompetitorEvent && !game.activeCompetitorEvent.responded && (
+                        <div className="border border-[#ff0044] border-opacity-60 p-2">
+                          <div className="font-pixel text-xs text-[#ff0044] mb-1">⚡ MARKET EVENT</div>
+                          <div className="font-terminal text-xs text-[#ffb000] mb-2">{game.activeCompetitorEvent.description}</div>
+                          <div className="space-y-1">
+                            {game.activeCompetitorEvent.responseOptions.map((r: any) => {
+                              const canAfford = game.cash >= r.moneyCost;
+                              const hasTime   = 160-(game.monthlyTimeUsed??0) >= r.timeCost;
+                              return (
+                                <div key={r.id} className="flex items-center justify-between">
+                                  <span className="font-terminal text-xs opacity-70">{r.label} (⏰{r.timeCost}h ${r.moneyCost})</span>
+                                  <button onClick={() => handleRespondCompEvent(r.id)} disabled={!canAfford || !hasTime || processing}
+                                    className={`font-pixel text-xs px-2 py-0.5 border ${canAfford && hasTime ? "border-[#ffb000] text-[#ffb000] hover:opacity-80" : "opacity-30 border-[#ff6600] text-[#ff6600]"}`}>
+                                    RESPOND
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* AI competitors */}
+                      <div className="font-pixel text-xs text-[#ffb000] mb-1">MARKET LANDSCAPE</div>
+                      {(game.competitors ?? []).map((c: any, i: number) => (
+                        <div key={i} className="border border-[#ff6600] border-opacity-20 p-2">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="font-terminal text-[#ffb000] text-sm">{c.name}</span>
+                            <span className="font-terminal text-xs" style={{ color: c.trend === "up" ? "#00ff41" : c.trend === "down" ? "#ff0044" : "#ffb000" }}>
+                              {c.trend === "up" ? "↑" : c.trend === "down" ? "↓" : "→"} {c.marketShare}% share
+                            </span>
+                          </div>
+                          <div className="font-terminal text-xs opacity-50">{c.strategy}</div>
+                          <div className="font-terminal text-xs opacity-40">${c.monthlyRevenue.toLocaleString()}/mo · Price idx: {c.priceIndex} · Quality: {c.qualityLevel}</div>
+                        </div>
+                      ))}
+
+                      {/* Intel log */}
+                      {(game.competitorIntelLog ?? []).length > 0 && (
+                        <div className="border border-[#00aaff] border-opacity-20 p-2">
+                          <div className="font-pixel text-xs text-[#00aaff] mb-1">INTEL LOG</div>
+                          {(game.competitorIntelLog as string[]).map((entry: string, i: number) => (
+                            <div key={i} className="font-terminal text-xs opacity-60 py-0.5 border-b border-[#00aaff] border-opacity-10">{entry}</div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ── REPORTS sub-tab ────────────────────────── */}
+                  {bizSubTab === "reports" && bizFull && (
+                    <div className="space-y-2">
+                      <div className="font-pixel text-xs text-[#ffb000] mb-1">FINANCIAL REPORTS (last {(game.financialHistory ?? []).length} months)</div>
+                      {(game.financialHistory ?? []).length === 0 ? (
+                        <div className="font-terminal text-xs opacity-40 p-2">No reports yet. Advance to next month in FULL mode to generate your first P&L.</div>
+                      ) : [...(game.financialHistory as any[])].reverse().slice(0, 6).map((r: any, i: number) => (
+                        <div key={i} className="border border-[#ff6600] border-opacity-20 p-2">
+                          <div className="font-pixel text-xs text-[#ffb000] mb-1">AGE {r.age} / {["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"][r.month-1]}</div>
+                          <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 font-terminal text-xs">
+                            <span className="opacity-50">Revenue</span>        <span className="text-[#00ff41]">${r.revenue.toLocaleString()}</span>
+                            <span className="opacity-50">COGS</span>           <span className="text-[#ff0044]">-${r.cogs.toLocaleString()}</span>
+                            <span className="opacity-50">Gross Profit</span>   <span style={{ color: r.grossProfit >= 0 ? "#00ff41" : "#ff0044" }}>${r.grossProfit.toLocaleString()} ({r.grossMarginPct}%)</span>
+                            <span className="opacity-50">Marketing</span>      <span className="text-[#ff6600]">-${r.opExMarketing.toLocaleString()}</span>
+                            <span className="opacity-50">Payroll</span>        <span className="text-[#ff6600]">-${r.opExPayroll.toLocaleString()}</span>
+                            <span className="opacity-50">Tools/Other</span>    <span className="text-[#ff6600]">-${r.opExTools.toLocaleString()}</span>
+                            <span className="font-pixel opacity-80">Net Profit</span>   <span className="font-pixel" style={{ color: r.netProfit >= 0 ? "#00ff41" : "#ff0044" }}>${r.netProfit.toLocaleString()} ({r.netMarginPct}%)</span>
+                            <span className="opacity-40">Mktg ROI</span>       <span className="opacity-60">{r.marketingROI}x</span>
+                            <span className="opacity-40">LTV:CAC</span>        <span className="opacity-60">{r.ltvCacRatio}x</span>
+                            <span className="opacity-40">Rev/Employee</span>   <span className="opacity-60">${r.revenuePerEmployee.toLocaleString()}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* ── INVESTORS sub-tab ──────────────────────── */}
+                  {bizSubTab === "investors" && bizFull && bizStage === "scale" && (
+                    <div className="space-y-2">
+                      <div className="font-pixel text-xs text-[#ffb000]">INVESTOR TRACK</div>
+                      <div className="border border-[#ff6600] border-opacity-30 p-2">
+                        <div className="font-terminal text-xs opacity-50">Stage</div>
+                        <div className="font-terminal text-[#ffb000] text-sm">{(game.investorStage ?? "none").replace(/_/g," ").toUpperCase()}</div>
+                        <div className="font-terminal text-xs opacity-50 mt-1">Funding Raised: <span className="text-[#00ff41]">${(game.totalFundingRaised ?? 0).toLocaleString()}</span></div>
+                        <div className="font-terminal text-xs opacity-50">Equity Given: <span className="text-[#ff0044]">{game.equityGiven ?? 0}%</span></div>
+                        <div className="font-terminal text-xs opacity-50">You Own: <span className="text-[#00ff41]">{100-(game.equityGiven ?? 0)}%</span></div>
+                      </div>
+                      {(game.investorStage === "none" || !game.investorStage) && (
+                        <button onClick={() => { if (gameId) startInvestorOutreach({ gameId, stage: "angel_outreach" }); }} disabled={processing}
+                          className="w-full font-pixel text-xs py-1.5 border border-[#ffb000] text-[#ffb000] hover:opacity-80">
+                          PITCH ANGELS ($50k–$250k)
+                        </button>
+                      )}
+                      {game.investorStage === "angel_funded" && (
+                        <button onClick={() => { if (gameId) startInvestorOutreach({ gameId, stage: "seed_outreach" }); }} disabled={processing}
+                          className="w-full font-pixel text-xs py-1.5 border border-[#ff00ff] text-[#ff00ff] hover:opacity-80">
+                          PITCH SEED VCs ($500k–$2M)
+                        </button>
+                      )}
+                      {(game.pendingBusinessRipples ?? []).filter((r: any) => r.effectType === "investor_decision").length > 0 && (
+                        <div className="font-terminal text-xs text-[#ffb000] opacity-70 p-2 border border-[#ffb000] border-opacity-30">
+                          ⏳ Investor decision pending — check back in a month or two.
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                 </>
               )}
             </div>
@@ -1223,6 +1817,67 @@ function GameContent() {
           <div className="font-terminal text-[#ffb000] text-sm shrink-0">{Math.round(ageProgress)}% COMPLETE</div>
         </div>
       </div>
+
+      {/* ── BOARD REPORT MODAL ─────────────────────────────────── */}
+      {showBoardReport && (() => {
+        const report = computeBoardReport(game);
+        if (!report) { setShowBoardReport(false); return null; }
+        const STATUS_ICON = ["❌","⚠️","✅"];
+        const CR_COLORS: Record<string,string> = { AAA:"#00ff41", AA:"#00ff41", A:"#00ff41", B:"#ffb000", C:"#ff6600", D:"#ff0044" };
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-80 p-4">
+            <div className="bg-[#0a0a0a] border border-[#ff6600] border-opacity-80 p-4 max-w-sm w-full max-h-[80vh] overflow-y-auto">
+              <div className="font-pixel text-[#ff6600] text-sm mb-3">📋 BOARD REPORT — {MONTHS[(game.currentMonth??1)-1]} AGE {game.currentAge}</div>
+
+              {/* KPI scorecards */}
+              <div className="space-y-1 mb-3">
+                {report.kpiData.map((k, i) => (
+                  <div key={i} className="flex items-center gap-2 p-1 border border-[#ff6600] border-opacity-20">
+                    <span>{STATUS_ICON[k.status]}</span>
+                    <span className="font-terminal text-xs flex-1 opacity-70">{k.label}</span>
+                    <span className="font-terminal text-xs font-bold" style={{ color: k.status===2?"#00ff41":k.status===1?"#ffb000":"#ff0044" }}>{k.detail}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Credit + Board Confidence */}
+              <div className="flex items-center gap-3 mb-3">
+                <span className="font-pixel text-xs px-2 py-0.5 rounded" style={{ backgroundColor: CR_COLORS[report.creditRating]??'#ffb000', color:"#000" }}>{report.creditRating}</span>
+                <div className="flex-1">
+                  <div className="font-terminal text-xs opacity-50 mb-0.5">Board Confidence</div>
+                  <div className="h-2 bg-[#1a1a1a] rounded overflow-hidden">
+                    <div className="h-full" style={{ width:`${report.boardConfidence}%`, backgroundColor: report.boardConfidence>=60?"#00ff41":report.boardConfidence>=40?"#ffb000":"#ff0044" }} />
+                  </div>
+                </div>
+                <span className="font-terminal text-xs text-[#ffb000]">{report.boardConfidence}%</span>
+              </div>
+
+              {/* Competitors */}
+              {report.competitors.length > 0 && (
+                <div className="mb-3 border border-[#ff6600] border-opacity-20 p-2">
+                  <div className="font-pixel text-xs opacity-60 mb-1">MARKET POSITION — {report.pShare}% share · Rank #{report.competitors.filter((c: any) => c.marketShare > report.pShare).length + 1} of {report.competitors.length+1}</div>
+                  {report.competitors.map((c: any, i: number) => (
+                    <div key={i} className="font-terminal text-xs opacity-50 flex justify-between">
+                      <span>{c.name}</span><span>{c.marketShare}%</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Recommendation */}
+              <div className="p-2 border border-[#00aaff] border-opacity-40 mb-3">
+                <div className="font-pixel text-xs text-[#00aaff] mb-1">STRATEGIC RECOMMENDATION</div>
+                <div className="font-terminal text-xs text-[#00aaff] opacity-80">{report.recommendation}</div>
+              </div>
+
+              <button onClick={() => setShowBoardReport(false)} className="w-full font-pixel text-xs py-1.5 bg-[#ff6600] text-black hover:opacity-90">
+                CLOSE &amp; CONTINUE
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
     </div>
   );
 }
