@@ -2,6 +2,7 @@ import { mutation, query, action } from "./_generated/server";
 import { v } from "convex/values";
 import { api } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
+import { DECISION_TEMPLATES } from "./businessDecisions";
 
 // ═══════════════════════════════════════════════════
 // HELPERS
@@ -522,6 +523,65 @@ export const endMonth = mutation({
     if (newAge >= 30 && !game.milestone30Done) checkMilestone = 30;
     else if (newAge >= 50 && !game.milestone50Done) checkMilestone = 50;
 
+    // ── 20. Business mini-game: resolve ripples ───────────────
+    const bizPatch: Record<string, any> = {};
+
+    const dueRipples = (game.pendingBusinessRipples ?? []).filter(
+      r => r.resolvesAtAge < newAge || (r.resolvesAtAge === newAge && r.resolvesAtMonth <= newMonth)
+    );
+    for (const ripple of dueRipples) {
+      switch (ripple.effectType) {
+        case 'revenue_boost':       cash += ripple.value;                              break;
+        case 'monthly_revenue_add': monthlyIncome += ripple.value;                     break;
+        case 'expense_reduction':   monthlyExpenses = Math.max(0, monthlyExpenses - ripple.value); break;
+        case 'price_increase':      monthlyIncome = Math.round(monthlyIncome * (1 + ripple.value / 100)); break;
+        // churn_reduction, time_saved, conversion_boost, lead_gen, insight_unlock,
+        // risk_reduction, revenue_multiplier, credit_unlock — narrative-only, no direct stat change
+        default: break;
+      }
+    }
+    const remainingRipples = (game.pendingBusinessRipples ?? []).filter(r => !dueRipples.includes(r));
+    bizPatch.pendingBusinessRipples = remainingRipples;
+
+    // ── 21. Generate fresh business decisions for next month ──
+    if (game.activeBusiness && game.activeBusiness.stage !== 'failed') {
+      const shuffled = [...DECISION_TEMPLATES].sort(() => Math.random() - 0.5);
+      const newDecisions = shuffled.slice(0, 4).map(t => ({
+        id: t.id, category: t.category, title: t.title, description: t.description,
+        timeCostDIY:   t.timeDIY,   moneyCostDIY:  t.moneyDIY,
+        timeCostHire:  t.timeHire,  moneyCostHire: t.moneyHire,
+        rippleMonths: t.rippleMonths, rippleEffectType: t.rippleType,
+        rippleValueMin: t.min,       rippleValueMax: t.max,
+      }));
+      const roles = ['VA', 'Marketer', 'Developer', 'Sales Rep', 'Operations'];
+      const names = ['Alex', 'Jordan', 'Morgan', 'Casey', 'Riley', 'Sam', 'Drew', 'Quinn'];
+      const salaryMap: Record<string, number> = { VA: 800, Marketer: 3500, Developer: 6000, 'Sales Rep': 2500, Operations: 3000 };
+      const candidates = Array.from({ length: 3 }, () => {
+        const role  = roles[Math.floor(Math.random() * roles.length)];
+        const skill = Math.round(Math.random() * 6) + 3;
+        return {
+          name:          names[Math.floor(Math.random() * names.length)],
+          role,
+          skillLevel:    skill,
+          reliability:   Math.round(Math.random() * 6) + 3,
+          monthlySalary: (salaryMap[role] ?? 2000) + (skill - 5) * 300,
+        };
+      });
+      bizPatch.pendingBusinessDecisions = newDecisions;
+      bizPatch.pendingHireCandidates    = candidates;
+    }
+
+    // ── 22. Time budget overflow penalty ─────────────────────
+    const timeUsed = game.monthlyTimeUsed ?? 0;
+    if (timeUsed > 160) {
+      const overflow = timeUsed - 160;
+      const penalty  = Math.floor(overflow / 20);
+      happiness = Math.max(0, happiness - penalty * 5);
+      health    = Math.max(0, health    - penalty * 2);
+    }
+    // Reset monthly time counter
+    bizPatch.monthlyTimeUsed = 0;
+
     await ctx.db.patch(args.gameId, {
       cash: Math.round(cash),
       monthlyIncome,
@@ -551,6 +611,7 @@ export const endMonth = mutation({
       ageAtDeath,
       currentPartner: updatedPartner,
       pendingMatches,
+      ...bizPatch,
     });
 
     return {

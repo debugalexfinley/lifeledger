@@ -280,6 +280,9 @@ function GameContent() {
   const generateDatingMatches  = useMutation(api.games.generateDatingMatches);
   const breakUp                = useMutation(api.games.breakUp);
   const proposeMarriage        = useMutation(api.games.proposeMarriage);
+  const makeBusinessDecision   = useMutation(api.businessDecisions.makeBusinessDecision);
+  const hireEmployee           = useMutation(api.businessDecisions.hireEmployee);
+  const fireEmployee           = useMutation(api.businessDecisions.fireEmployee);
 
   const [seeded,           setSeeded]           = useState(false);
   const [processing,       setProcessing]       = useState(false);
@@ -290,6 +293,9 @@ function GameContent() {
   const [showMatches,      setShowMatches]      = useState(false);
   const [newStack,         setNewStack]         = useState<string | null>(null);
   const [lifeExpColor,     setLifeExpColor]     = useState("#00ff41");
+  const [bizSubTab,        setBizSubTab]        = useState<"decisions" | "team" | "pipeline">("decisions");
+  const [diyMode,          setDiyMode]          = useState<Record<string, boolean>>({});
+  const [fireConfirm,      setFireConfirm]      = useState<number | null>(null);
 
   // Seed on mount
   useEffect(() => {
@@ -427,6 +433,44 @@ function GameContent() {
     setShowMatches(true);
   };
 
+  const handleBusinessDecision = async (decisionId: string, usedHire: boolean) => {
+    if (!gameId || processing) return;
+    setProcessing(true);
+    try {
+      const res = await makeBusinessDecision({ gameId, decisionId, usedHire }) as any;
+      if (res?.status === "ok") {
+        notify(res.rippleDescription ?? "Decision executed!", "success");
+        setLastOutcome(res.rippleDescription ?? "Decision executed!");
+      } else {
+        notify(res?.message ?? "Decision failed", "error");
+      }
+    } catch { notify("Business decision failed", "error"); }
+    finally { setProcessing(false); }
+  };
+
+  const handleHireEmployee = async (candidateIndex: number) => {
+    if (!gameId || processing) return;
+    setProcessing(true);
+    try {
+      const res = await hireEmployee({ gameId, candidateIndex }) as any;
+      if (res?.status === "ok") notify(res.message ?? "Hired!", "success");
+      else notify(res?.message ?? "Hire failed", "error");
+    } catch { notify("Hire failed", "error"); }
+    finally { setProcessing(false); }
+  };
+
+  const handleFireEmployee = async (employeeIndex: number) => {
+    if (!gameId || processing) return;
+    setProcessing(true);
+    setFireConfirm(null);
+    try {
+      const res = await fireEmployee({ gameId, employeeIndex }) as any;
+      if (res?.status === "ok") notify(res.message ?? "Employee let go", "info");
+      else notify(res?.message ?? "Fire failed", "error");
+    } catch { notify("Fire failed", "error"); }
+    finally { setProcessing(false); }
+  };
+
   if (!gameId) return (
     <div className="min-h-screen flex items-center justify-center">
       <div className="font-pixel text-[#ff0044] text-xs">NO GAME ID PROVIDED</div>
@@ -439,7 +483,7 @@ function GameContent() {
   );
 
   const monthLabel   = MONTHS[(game.currentMonth - 1) % 12] || "JAN";
-  const categories   = ["career","education","housing","invest","debt","lifestyle","grow","health"];
+  const categories   = ["career","education","housing","invest","debt","lifestyle","grow","health","business"];
   const filteredDecs = DECISIONS.filter(d => d.category === activeCategory);
   const startAge     = game.startingPoint === "high_school" ? 16 : game.startingPoint === "college" ? 18 : 22;
   const ageProgress  = ((game.currentAge - startAge) / (75 - startAge)) * 100;
@@ -675,10 +719,16 @@ function GameContent() {
               <button key={cat} onClick={() => setActiveCategory(cat)}
                 className={`font-pixel text-xs px-2 py-1 border transition-all ${
                   activeCategory === cat
-                    ? "bg-[#00ff41] text-black border-[#00ff41]"
-                    : "bg-transparent text-[#00ff41] border-[#00ff41] opacity-60 hover:opacity-100"
-                } ${(cat === "grow") ? "text-[#ffb000] border-[#ffb000]" : ""}`}>
-                {cat === "grow" ? "GROW ✦" : cat === "health" ? "HEALTH +" : cat.toUpperCase()}
+                    ? cat === "business"
+                      ? "bg-[#ff6600] text-black border-[#ff6600]"
+                      : "bg-[#00ff41] text-black border-[#00ff41]"
+                    : cat === "business"
+                      ? "bg-transparent text-[#ff6600] border-[#ff6600] opacity-60 hover:opacity-100"
+                      : cat === "grow"
+                        ? "bg-transparent text-[#ffb000] border-[#ffb000] opacity-60 hover:opacity-100"
+                        : "bg-transparent text-[#00ff41] border-[#00ff41] opacity-60 hover:opacity-100"
+                }`}>
+                {cat === "grow" ? "GROW ✦" : cat === "health" ? "HEALTH +" : cat === "business" ? "🏢 BIZ" : cat.toUpperCase()}
               </button>
             ))}
           </div>
@@ -818,8 +868,226 @@ function GameContent() {
             </div>
           )}
 
+          {/* ── BUSINESS tab ────────────────────────────── */}
+          {activeCategory === "business" && (
+            <div className="flex-1 overflow-y-auto min-h-0 flex flex-col gap-2">
+              {/* Guard: show message if no active business */}
+              {!game.activeBusiness ? (
+                <div className="font-terminal text-[#ff6600] opacity-70 text-sm p-2 border border-[#ff6600] border-opacity-30">
+                  🏢 Start a business first to unlock the Business Mini-Game!
+                </div>
+              ) : (
+                <>
+                  {/* Time meter */}
+                  <div className="flex items-center gap-2 p-2 border border-[#ff6600] border-opacity-30">
+                    <span className="font-terminal text-xs opacity-70">⏰ TIME REMAINING:</span>
+                    <span className="font-terminal text-[#ffb000] text-base font-bold">
+                      {Math.max(0, 160 - (game.monthlyTimeUsed ?? 0))} hrs
+                    </span>
+                    <div className="flex-1 h-2 bg-[#1a1a1a] rounded overflow-hidden">
+                      <div
+                        className="h-full transition-all"
+                        style={{
+                          width: `${Math.min(100, ((game.monthlyTimeUsed ?? 0) / 160) * 100)}%`,
+                          backgroundColor: (game.monthlyTimeUsed ?? 0) > 140 ? "#ff0044" : (game.monthlyTimeUsed ?? 0) > 100 ? "#ffb000" : "#00ff41",
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Sub-tab nav */}
+                  <div className="flex gap-1">
+                    {(["decisions","team","pipeline"] as const).map(sub => (
+                      <button key={sub} onClick={() => setBizSubTab(sub)}
+                        className={`font-pixel text-xs px-2 py-1 border transition-all ${
+                          bizSubTab === sub
+                            ? "bg-[#ff6600] text-black border-[#ff6600]"
+                            : "bg-transparent text-[#ff6600] border-[#ff6600] opacity-50 hover:opacity-100"
+                        }`}>
+                        {sub === "decisions" ? "DECISIONS" : sub === "team" ? "TEAM" : "PIPELINE"}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* DECISIONS sub-tab */}
+                  {bizSubTab === "decisions" && (
+                    <div className="space-y-2 overflow-y-auto">
+                      {(game.pendingBusinessDecisions ?? []).length === 0 ? (
+                        <div className="font-terminal text-sm opacity-50 p-2">
+                          No pending decisions. Advance to the next month to get new ones.
+                        </div>
+                      ) : (
+                        (game.pendingBusinessDecisions as any[]).map((dec: any) => {
+                          const isDIY = diyMode[dec.id] !== false; // default DIY
+                          const timeCost  = isDIY ? dec.timeCostDIY  : dec.timeCostHire;
+                          const moneyCost = isDIY ? dec.moneyCostDIY : dec.moneyCostHire;
+                          const timeLeft  = 160 - (game.monthlyTimeUsed ?? 0);
+                          const canAfford = game.cash >= moneyCost;
+                          const hasTime   = timeLeft >= timeCost;
+                          const canDo     = canAfford && hasTime;
+                          const CATEGORY_COLORS: Record<string, string> = {
+                            MARKETING: "#00ff41", PRODUCT: "#ffb000", OPERATIONS: "#00aaff",
+                            SALES: "#ff6600",     FINANCIAL: "#ff00ff",
+                          };
+                          const catColor = CATEGORY_COLORS[dec.category] ?? "#00ff41";
+                          return (
+                            <div key={dec.id} className="border border-[#ff6600] border-opacity-30 p-2 hover:border-opacity-60 transition-all">
+                              <div className="flex items-start justify-between gap-2 mb-1">
+                                <div>
+                                  <span className="font-terminal text-xs px-1 rounded mr-2" style={{ backgroundColor: catColor, color: "#000" }}>
+                                    {dec.category}
+                                  </span>
+                                  <span className="font-terminal text-[#ffb000] text-sm">{dec.title}</span>
+                                </div>
+                              </div>
+                              <div className="font-terminal text-[#00ff41] opacity-60 text-xs mb-2">{dec.description}</div>
+                              {/* DIY / HIRE toggle */}
+                              <div className="flex gap-1 mb-2">
+                                <button
+                                  onClick={() => setDiyMode(m => ({ ...m, [dec.id]: true }))}
+                                  className={`font-pixel text-xs px-2 py-0.5 border transition-all ${isDIY ? "bg-[#00ff41] text-black border-[#00ff41]" : "text-[#00ff41] border-[#00ff41] opacity-50"}`}>
+                                  DIY
+                                </button>
+                                <button
+                                  onClick={() => setDiyMode(m => ({ ...m, [dec.id]: false }))}
+                                  className={`font-pixel text-xs px-2 py-0.5 border transition-all ${!isDIY ? "bg-[#ffb000] text-black border-[#ffb000]" : "text-[#ffb000] border-[#ffb000] opacity-50"}`}>
+                                  HIRE
+                                </button>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <div className="font-terminal text-xs opacity-60 space-x-3">
+                                  <span>⏰ {timeCost}h</span>
+                                  <span style={{ color: canAfford ? "#00ff41" : "#ff0044" }}>
+                                    💰 ${moneyCost.toLocaleString()}
+                                  </span>
+                                  <span className="opacity-40">→ {dec.rippleMonths}mo ripple</span>
+                                </div>
+                                <button
+                                  onClick={() => handleBusinessDecision(dec.id, !isDIY)}
+                                  disabled={!canDo || processing}
+                                  className={`font-pixel text-xs px-2 py-1 border transition-all ${
+                                    canDo ? "bg-[#ff6600] text-black border-[#ff6600] hover:opacity-90" : "opacity-30 text-[#ff6600] border-[#ff6600] cursor-not-allowed"
+                                  }`}>
+                                  {!hasTime ? "NO TIME" : !canAfford ? "NO $$" : "EXECUTE"}
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
+
+                  {/* TEAM sub-tab */}
+                  {bizSubTab === "team" && (
+                    <div className="space-y-3 overflow-y-auto">
+                      {/* Current employees */}
+                      <div>
+                        <div className="font-pixel text-xs text-[#ff6600] mb-1">YOUR TEAM ({(game.businessEmployees ?? []).length})</div>
+                        {(game.businessEmployees ?? []).length === 0 ? (
+                          <div className="font-terminal text-xs opacity-50">No employees yet. Hire from candidates below.</div>
+                        ) : (
+                          (game.businessEmployees as any[]).map((emp: any, i: number) => (
+                            <div key={i} className="border border-[#ff6600] border-opacity-30 p-2 mb-1">
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <div className="font-terminal text-[#ffb000] text-sm">{emp.name} · <span className="opacity-60">{emp.role}</span></div>
+                                  <div className="font-terminal text-xs opacity-60">
+                                    Skill: {"★".repeat(emp.skillLevel)} · Reliability: {"★".repeat(emp.reliability)}
+                                  </div>
+                                  <div className="font-terminal text-xs" style={{ color: "#ff0044" }}>
+                                    -${emp.monthlySalary.toLocaleString()}/mo · Hired age {emp.hiredAtAge}
+                                  </div>
+                                </div>
+                                {fireConfirm === i ? (
+                                  <div className="flex gap-1">
+                                    <button onClick={() => handleFireEmployee(i)} className="font-pixel text-xs px-1 py-0.5 border border-[#ff0044] text-[#ff0044]">CONFIRM</button>
+                                    <button onClick={() => setFireConfirm(null)} className="font-pixel text-xs px-1 py-0.5 border border-[#00ff41] opacity-50">✕</button>
+                                  </div>
+                                ) : (
+                                  <button onClick={() => setFireConfirm(i)} className="font-pixel text-xs px-2 py-1 border border-[#ff0044] text-[#ff0044] opacity-60 hover:opacity-100">
+                                    FIRE
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                      {/* Candidates */}
+                      <div>
+                        <div className="font-pixel text-xs text-[#00ff41] mb-1">CANDIDATES</div>
+                        {(game.pendingHireCandidates ?? []).length === 0 ? (
+                          <div className="font-terminal text-xs opacity-50">No candidates this month. Advance months to see new ones.</div>
+                        ) : (
+                          (game.pendingHireCandidates as any[]).map((c: any, i: number) => (
+                            <div key={i} className="border border-[#00ff41] border-opacity-30 p-2 mb-1">
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <div className="font-terminal text-[#ffb000] text-sm">{c.name} · <span className="opacity-60">{c.role}</span></div>
+                                  <div className="font-terminal text-xs opacity-60">
+                                    Skill: {"★".repeat(c.skillLevel)} · Reliability: {"★".repeat(c.reliability)}
+                                  </div>
+                                  <div className="font-terminal text-xs" style={{ color: "#ff0044" }}>
+                                    ${c.monthlySalary.toLocaleString()}/mo
+                                  </div>
+                                </div>
+                                <button
+                                  onClick={() => handleHireEmployee(i)}
+                                  disabled={processing || game.cash < c.monthlySalary}
+                                  className={`font-pixel text-xs px-2 py-1 border transition-all ${
+                                    game.cash >= c.monthlySalary ? "bg-[#00ff41] text-black border-[#00ff41]" : "opacity-30 text-[#00ff41] border-[#00ff41] cursor-not-allowed"
+                                  }`}>
+                                  {game.cash >= c.monthlySalary ? "HIRE" : "NO $$"}
+                                </button>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* PIPELINE sub-tab */}
+                  {bizSubTab === "pipeline" && (
+                    <div className="space-y-2 overflow-y-auto">
+                      <div className="font-terminal text-xs opacity-50 mb-1">Upcoming ripple effects from past decisions:</div>
+                      {(game.pendingBusinessRipples ?? []).length === 0 ? (
+                        <div className="font-terminal text-xs opacity-40">No pending ripples. Execute decisions to build pipeline.</div>
+                      ) : (
+                        [...(game.pendingBusinessRipples as any[])].sort((a: any, b: any) =>
+                          a.resolvesAtAge !== b.resolvesAtAge
+                            ? a.resolvesAtAge - b.resolvesAtAge
+                            : a.resolvesAtMonth - b.resolvesAtMonth
+                        ).map((r: any, i: number) => {
+                          const monthsAway =
+                            (r.resolvesAtAge - game.currentAge) * 12 +
+                            (r.resolvesAtMonth - game.currentMonth);
+                          const isRevenue = r.effectType.includes("revenue") || r.effectType === "price_increase" || r.effectType === "lead_gen";
+                          const isTime    = r.effectType === "time_saved";
+                          const dotColor  = isRevenue ? "#00ff41" : isTime ? "#00aaff" : "#ffb000";
+                          return (
+                            <div key={i} className="flex gap-2 items-start p-2 border border-opacity-20" style={{ borderColor: dotColor }}>
+                              <div className="w-2 h-2 rounded-full mt-1 shrink-0" style={{ backgroundColor: dotColor }} />
+                              <div>
+                                <div className="font-terminal text-xs opacity-60">
+                                  In <span style={{ color: dotColor }}>{Math.max(1, monthsAway)} mo</span> · Age {r.resolvesAtAge}/{r.resolvesAtMonth}
+                                </div>
+                                <div className="font-terminal text-sm" style={{ color: dotColor }}>{r.description}</div>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
           {/* ── Standard decision tabs ─────────────────── */}
-          {activeCategory !== "grow" && activeCategory !== "health" && (
+          {activeCategory !== "grow" && activeCategory !== "health" && activeCategory !== "business" && (
             <div className="flex-1 overflow-y-auto space-y-1 min-h-0">
               {filteredDecs.map(d => (
                 <DecisionButton key={d.id} decision={d} game={game} onDecision={handleDecision} />
