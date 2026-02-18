@@ -1,26 +1,255 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --font-press-start: "Press Start 2P", monospace;
+  --font-vt323: "VT323", monospace;
+  --green: #00ff41;
+  --amber: #ffb000;
+  --red: #ff0044;
+  --dim-green: #00cc33;
+  --bg: #0a0a0a;
+  --panel-bg: #0d1117;
+  --border: #00ff41;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--bg);
+  color: var(--green);
+  font-family: var(--font-vt323), monospace;
+  font-size: 18px;
+  line-height: 1.4;
+  overflow-x: hidden;
+}
+
+/* ── PIXEL FONTS ────────────────────────────── */
+.font-pixel {
+  font-family: var(--font-press-start), monospace;
+}
+
+.font-terminal {
+  font-family: var(--font-vt323), monospace;
+}
+
+/* ── PIXEL PANEL ────────────────────────────── */
+.pixel-panel {
+  background: var(--panel-bg);
+  border: 2px solid var(--green);
+  box-shadow:
+    inset 0 0 0 1px #001f0a,
+    4px 4px 0 #003010,
+    0 0 20px rgba(0, 255, 65, 0.05);
+  position: relative;
+}
+
+.pixel-panel::before {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  border: 1px solid rgba(0, 255, 65, 0.15);
+  pointer-events: none;
+}
+
+/* ── CRT SCANLINES ──────────────────────────── */
+.crt {
+  position: relative;
+}
+
+.crt::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.15) 2px,
+    rgba(0, 0, 0, 0.15) 4px
+  );
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* ── PIXEL BUTTON ───────────────────────────── */
+.pixel-btn {
+  font-family: var(--font-press-start), monospace;
+  font-size: 10px;
+  padding: 10px 20px;
+  background: #001a08;
+  color: var(--green);
+  border: 2px solid var(--green);
+  box-shadow: 3px 3px 0 var(--dim-green);
+  cursor: pointer;
+  transition: all 0.05s;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  text-decoration: none;
+  display: inline-block;
+}
+
+.pixel-btn:hover {
+  background: var(--green);
+  color: #000;
+  box-shadow: 5px 5px 0 var(--dim-green);
+  transform: translate(-1px, -1px);
+}
+
+.pixel-btn:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--dim-green);
+}
+
+.pixel-btn-amber {
+  color: var(--amber);
+  border-color: var(--amber);
+  box-shadow: 3px 3px 0 #664400;
+}
+
+.pixel-btn-amber:hover {
+  background: var(--amber);
+  color: #000;
+}
+
+.pixel-btn-red {
+  color: var(--red);
+  border-color: var(--red);
+  box-shadow: 3px 3px 0 #660022;
+}
+
+.pixel-btn-red:hover {
+  background: var(--red);
+  color: #000;
+}
+
+.pixel-btn-disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* ── PIXEL PROGRESS BAR ─────────────────────── */
+.pixel-bar-container {
+  width: 100%;
+  height: 16px;
+  background: #001a08;
+  border: 2px solid var(--green);
+  position: relative;
+  overflow: hidden;
+}
+
+.pixel-bar-fill {
+  height: 100%;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--green) 0px,
+    var(--green) 8px,
+    transparent 8px,
+    transparent 10px
+  );
+  transition: width 0.3s ease;
+}
+
+.pixel-bar-fill-amber {
+  background: repeating-linear-gradient(
+    90deg,
+    var(--amber) 0px,
+    var(--amber) 8px,
+    transparent 8px,
+    transparent 10px
+  );
+}
+
+.pixel-bar-fill-red {
+  background: repeating-linear-gradient(
+    90deg,
+    var(--red) 0px,
+    var(--red) 8px,
+    transparent 8px,
+    transparent 10px
+  );
+}
+
+/* ── STAT NUMBER ANIMATION ──────────────────── */
+@keyframes countUp {
+  from { opacity: 0.5; transform: scale(1.05); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.stat-animate {
+  animation: countUp 0.3s ease-out;
+}
+
+/* ── EVENT CARD SLIDE IN ────────────────────── */
+@keyframes slideInRight {
+  from { transform: translateX(40px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.event-slide-in {
+  animation: slideInRight 0.3s ease-out;
+}
+
+/* ── BLINK CURSOR ───────────────────────────── */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.cursor-blink::after {
+  content: "█";
+  animation: blink 1s step-end infinite;
+  margin-left: 2px;
+}
+
+/* ── ROLLING ANIMATION ──────────────────────── */
+@keyframes roll {
+  0% { transform: translateY(-100%); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+
+.roll-in {
+  animation: roll 0.2s ease-out;
+}
+
+/* ── SCROLLBAR ──────────────────────────────── */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #001a08;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--dim-green);
+  border: 1px solid var(--green);
+}
+
+/* ── COLOR UTILITIES ────────────────────────── */
+.text-green-pixel { color: var(--green); }
+.text-amber-pixel { color: var(--amber); }
+.text-red-pixel { color: var(--red); }
+.border-green-pixel { border-color: var(--green); }
+.border-amber-pixel { border-color: var(--amber); }
+
+/* ── GLOW EFFECTS ───────────────────────────── */
+.glow-green {
+  text-shadow: 0 0 10px rgba(0, 255, 65, 0.8), 0 0 20px rgba(0, 255, 65, 0.4);
+}
+
+.glow-amber {
+  text-shadow: 0 0 10px rgba(255, 176, 0, 0.8), 0 0 20px rgba(255, 176, 0, 0.4);
+}
+
+/* ── MOBILE RESPONSIVE ──────────────────────── */
+@media (max-width: 768px) {
+  .pixel-btn {
+    font-size: 8px;
+    padding: 8px 14px;
+  }
+
+  body {
+    font-size: 16px;
+  }
 }
