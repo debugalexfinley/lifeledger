@@ -12,6 +12,7 @@ import type * as claude from "../claude.js";
 import type * as games from "../games.js";
 import type * as leaderboard from "../leaderboard.js";
 import type * as seedEvents from "../seedEvents.js";
+import type * as seedData from "../seedData.js";
 
 import type {
   ApiFromModules,
@@ -24,6 +25,7 @@ declare const fullApi: ApiFromModules<{
   games: typeof games;
   leaderboard: typeof leaderboard;
   seedEvents: typeof seedEvents;
+  seedData: typeof seedData;
 }>;
 
 /**
