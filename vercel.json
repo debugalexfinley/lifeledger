@@ -1,7 +1,7 @@
 {
   "framework": "nextjs",
   "env": {
-    "NEXT_PUBLIC_CONVEX_URL": "https://beloved-toad-343.convex.cloud"
+    "NEXT_PUBLIC_CONVEX_URL": "https://charming-mammoth-893.convex.cloud"
   },
   "buildCommand": "npm run build",
   "outputDirectory": ".next"
