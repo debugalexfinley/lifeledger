@@ -147,7 +147,7 @@ function RetirementContent() {
     if (!game) return;
     const grade = game.finalGrade || "F";
     const nw = game.netWorth;
-    const text = `I just finished LifeLedger! 🎮\n${game.displayName} — Grade: ${grade}\nNet Worth: $${nw.toLocaleString()}\nScore: ${game.finalScore}/100\nPlay at lifeledger.vercel.app`;
+    const text = `I just finished Financial Pursuits! 🎮\n${game.displayName} — Grade: ${grade}\nNet Worth: $${nw.toLocaleString()}\nScore: ${game.finalScore}/100\nPlay at financialpursuits.com`;
     navigator.clipboard.writeText(text).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);

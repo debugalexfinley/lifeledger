@@ -12,7 +12,7 @@ const LOGO_LINES = [
   "██║     ██║██╔══╝  ██╔══╝  ",
   "███████╗██║██║     ███████╗",
   "╚══════╝╚═╝╚═╝     ╚══════╝",
-  "    LEDGER  v1.0            ",
+  " FINANCIAL PURSUITS v1.0   ",
 ];
 
 const GRADE_COLORS: Record<string, string> = {

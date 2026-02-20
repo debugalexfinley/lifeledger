@@ -16,11 +16,11 @@ const vt323 = VT323({
 });
 
 export const metadata: Metadata = {
-  title: "LifeLedger — Financial Life Simulator",
+  title: "Financial Pursuits — Financial Life Simulator",
   description:
     "A pixel-art turn-based financial life simulation game. Live from youth to age 75. Every decision counts.",
   openGraph: {
-    title: "LifeLedger",
+    title: "Financial Pursuits",
     description: "Turn-based financial life simulation. How will YOUR life score?",
     type: "website",
   },

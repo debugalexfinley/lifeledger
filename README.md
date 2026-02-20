@@ -1,4 +1,4 @@
-# LifeLedger 🎮
+# Financial Pursuits 🎮
 
 > A pixel/retro turn-based financial life simulation game
 

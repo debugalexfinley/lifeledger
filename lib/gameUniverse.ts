@@ -1,5 +1,5 @@
 /**
- * LifeLedger Game Universe
+ * Financial Pursuits Game Universe
  * All real-world companies, platforms, and marketplaces are renamed
  * to fictional equivalents that are recognizable but uniquely ours.
  */
